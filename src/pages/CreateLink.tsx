@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Copy, Share2, Check, ChevronDown, Shield, ExternalLink } from "lucide-react";
+import { Lock, Copy, Share2, Check, ChevronDown, Shield, ExternalLink, Info } from "lucide-react";
+import { QRCodeSVG } from 'qrcode.react';
+import { toast } from 'sonner';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { createPrivateLink } from "@/lib/privacyCash";
@@ -18,6 +21,7 @@ const CreateLink = () => {
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [loadingCreate, setLoadingCreate] = useState(false);
   const [token, setToken] = useState("USDC");
+  const [expiryHours, setExpiryHours] = useState<string>("");
 
   const handleCreateLink = async () => {
     setLoadingCreate(true);
@@ -52,8 +56,25 @@ const CreateLink = () => {
         amountType,
         linkUsageType,
       });
+      
+      // Add expiry to link metadata if specified
+      if (expiryHours && link.linkId) {
+        const expiryTimestamp = Date.now() + (parseFloat(expiryHours) * 60 * 60 * 1000);
+        const storedLink = localStorage.getItem(`link_${link.linkId}`);
+        if (storedLink) {
+          const linkData = JSON.parse(storedLink);
+          linkData.expiryTimestamp = expiryTimestamp;
+          localStorage.setItem(`link_${link.linkId}`, JSON.stringify(linkData));
+        }
+      }
+      
       setGeneratedLink(link.url);
       setLinkCreated(true);
+      
+      // Show success toast
+      toast.success('Link Created!', {
+        description: 'Your payment link is ready to share',
+      });
     } finally {
       setLoadingCreate(false);
     }
@@ -63,6 +84,9 @@ const CreateLink = () => {
     if (generatedLink) {
       navigator.clipboard.writeText(generatedLink);
       setCopied(true);
+      toast.success('Copied!', {
+        description: 'Link copied to clipboard',
+      });
       setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -72,6 +96,7 @@ const CreateLink = () => {
     setAmount("");
     setAmountType("fixed");
     setLinkUsageType("reusable");
+    setExpiryHours("");
   };
 
   return (
@@ -96,6 +121,23 @@ const CreateLink = () => {
               <p className="text-muted-foreground">
                 Generate a link to receive payments. Share the link — recipients withdraw to their own wallets.
               </p>
+            </motion.div>
+
+            {/* Privacy Model Explanation */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="mb-6"
+            >
+              <Alert className="border-blue-500/30 bg-blue-500/5">
+                <Info className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">How it works:</span> Links do not hold funds. 
+                  Payments are routed through Privacy Cash contracts. 
+                  Withdrawals require an explicit recipient address—this is not anonymous claiming.
+                </AlertDescription>
+              </Alert>
             </motion.div>
 
             {/* Form Card */}
@@ -236,6 +278,25 @@ const CreateLink = () => {
                       </div>
                     </div>
 
+                    {/* Optional Expiry */}
+                    <div className="space-y-3">
+                      <Label className="text-foreground">Link Expiry (Optional)</Label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          placeholder="Hours until expiry (leave empty for no expiry)"
+                          value={expiryHours}
+                          onChange={(e) => setExpiryHours(e.target.value)}
+                          className="h-12"
+                          min="1"
+                          max="720"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        If set, the link will automatically expire after the specified hours. Max: 30 days (720 hours).
+                      </p>
+                    </div>
+
                     {/* Privacy Level */}
                     <div className="p-4 rounded-xl bg-muted/50 border border-border/50">
                       <div className="flex items-center justify-between">
@@ -285,6 +346,18 @@ const CreateLink = () => {
                         Share this link to receive {linkUsageType === "one-time" ? "a single payment" : "multiple payments"}
                       </p>
                     </div>
+
+                    {/* QR Code */}
+                    {generatedLink && (
+                      <div className="flex justify-center p-6 bg-white rounded-xl border border-border">
+                        <QRCodeSVG 
+                          value={generatedLink} 
+                          size={200}
+                          level="H"
+                          includeMargin={true}
+                        />
+                      </div>
+                    )}
 
                     {/* Link Display */}
                     <div className="p-4 rounded-xl bg-muted/50 border border-border">

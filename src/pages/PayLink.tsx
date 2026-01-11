@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Shield, Check, Loader2, ArrowRight, AlertCircle } from "lucide-react";
+import { Lock, Shield, Check, Loader2, ArrowRight, AlertCircle, ExternalLink, Info } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import Header from "@/components/layout/Header";
@@ -19,6 +20,8 @@ const PayLink = () => {
   const { connected, publicKey, connect } = useWallet();
   const [paymentState, setPaymentState] = useState<"confirm" | "processing" | "success">("confirm");
   const [error, setError] = useState<string | null>(null);
+  const [txSignature, setTxSignature] = useState<string | null>(null);
+  const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
   
   const [paymentData, setPaymentData] = useState<{ amount?: string; token?: string } | null>({
     amount: undefined,
@@ -47,6 +50,15 @@ const PayLink = () => {
 
       const d = await getLinkDetails(id);
       if (d) {
+        // Check if link has expired
+        const storedLink = localStorage.getItem(`link_${id}`);
+        if (storedLink) {
+          const linkData = JSON.parse(storedLink);
+          if (linkData.expiryTimestamp && Date.now() > linkData.expiryTimestamp) {
+            setError('This payment link has expired');
+            return;
+          }
+        }
         setPaymentData({ amount: d.amountType === 'any' ? undefined : d.amount, token: d.token });
       }
     })();
@@ -57,6 +69,21 @@ const PayLink = () => {
     if (!connected || !publicKey) {
       setError("Please connect your wallet first");
       return;
+    }
+
+    // Check if link has expired
+    if (linkId) {
+      const storedLink = localStorage.getItem(`link_${linkId}`);
+      if (storedLink) {
+        const linkData = JSON.parse(storedLink);
+        if (linkData.expiryTimestamp && Date.now() > linkData.expiryTimestamp) {
+          setError('This payment link has expired');
+          toast.error('Link Expired', {
+            description: 'This payment link is no longer valid',
+          });
+          return;
+        }
+      }
     }
 
     if (!paymentData?.amount) {
@@ -184,16 +211,32 @@ const PayLink = () => {
       }
 
       console.log("✅ Transaction confirmed!");
-      console.log(`🔍 View on explorer: https://explorer.solana.com/tx/${signature}?cluster=${network}`);
+      const explorer = `https://explorer.solana.com/tx/${signature}?cluster=${network}`;
+      console.log(`🔍 View on explorer: ${explorer}`);
+
+      // Save transaction proof
+      setTxSignature(signature);
+      setExplorerUrl(explorer);
 
       // Update localStorage for demo
       await payLink(linkId);
+      
+      // Show success toast
+      toast.success('Payment Confirmed!', {
+        description: `Transaction sent successfully. View on explorer.`,
+      });
       
       setTimeout(() => setPaymentState("success"), 400);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Payment failed";
       console.error("❌ Payment error:", message);
       setError(message);
+      
+      // Show error toast
+      toast.error('Payment Failed', {
+        description: message,
+      });
+      
       setPaymentState("confirm");
     }
   };
@@ -287,6 +330,15 @@ const PayLink = () => {
                         </AlertDescription>
                       </Alert>
                     )}
+
+                    {/* Privacy Model Info */}
+                    <Alert className="mb-4 border-blue-500/30 bg-blue-500/5">
+                      <Info className="h-4 w-4 text-blue-600" />
+                      <AlertDescription className="text-sm text-muted-foreground">
+                        Funds are routed through Privacy Cash contracts. 
+                        This link is a payment request, not a bearer claim token.
+                      </AlertDescription>
+                    </Alert>
 
                     {/* Privacy Note */}
                     <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 mb-6">
@@ -384,8 +436,8 @@ const PayLink = () => {
                     </p>
 
                     {/* Confirmation Details */}
-                      <div className="p-4 rounded-xl bg-muted/50 border border-border mb-6 text-left">
-                      <div className="flex justify-between items-center mb-3">
+                    <div className="p-4 rounded-xl bg-muted/50 border border-border mb-6 text-left space-y-3">
+                      <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Amount</span>
                         <span className="font-semibold text-foreground">
                           {paymentData?.amount ?? "Any"} {paymentData?.token ?? "USDC"}
@@ -395,6 +447,27 @@ const PayLink = () => {
                         <span className="text-muted-foreground">Status</span>
                         <span className="text-green-500 font-medium">Confirmed</span>
                       </div>
+                      {txSignature && (
+                        <div className="pt-2 border-t border-border">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-muted-foreground text-xs">Transaction</span>
+                            <code className="text-xs font-mono text-foreground">
+                              {txSignature.slice(0, 8)}...{txSignature.slice(-8)}
+                            </code>
+                          </div>
+                          {explorerUrl && (
+                            <a
+                              href={explorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-sm font-medium transition-colors"
+                            >
+                              View on Solana Explorer
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Privacy Badges */}

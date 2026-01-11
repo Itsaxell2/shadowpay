@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { 
   Lock, 
@@ -10,26 +10,54 @@ import {
   Plus,
   Eye,
   EyeOff,
-  ChevronDown
+  ChevronDown,
+  RefreshCw,
+  Info
 } from "lucide-react";
+import { toast } from 'sonner';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Link } from "react-router-dom";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
-
-const paymentLinks = [
-  { id: 1, amount: "50.00", token: "USDC", status: "active", created: "2 hours ago", received: "0.00" },
-  { id: 2, amount: "Any", token: "USDC", status: "active", created: "1 day ago", received: "125.00" },
-  { id: 3, amount: "100.00", token: "USDC", status: "completed", created: "3 days ago", received: "100.00" },
-];
+import { getPrivateBalance } from "@/lib/privacyCash";
 
 const Dashboard = () => {
   const [showBalance, setShowBalance] = useState(true);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawTiming, setWithdrawTiming] = useState<"now" | "later">("now");
-  const privateBalance = "225.00";
+  const [privateBalance, setPrivateBalance] = useState<number>(0);
+  const [balanceLoading, setBalanceLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch balance on mount
+  useEffect(() => {
+    fetchBalance();
+  }, []);
+
+  const fetchBalance = async () => {
+    try {
+      setBalanceLoading(true);
+      const balance = await getPrivateBalance();
+      setPrivateBalance(balance);
+    } catch (error) {
+      console.error('Failed to fetch balance:', error);
+      setPrivateBalance(0);
+    } finally {
+      setBalanceLoading(false);
+    }
+  };
+
+  const handleRefreshBalance = async () => {
+    setRefreshing(true);
+    await fetchBalance();
+    toast.success('Balance Updated', {
+      description: 'Your private balance has been refreshed',
+    });
+    setRefreshing(false);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -66,28 +94,47 @@ const Dashboard = () => {
                     </div>
                     <span className="font-medium text-foreground">Private Balance</span>
                   </div>
-                  <button
-                    onClick={() => setShowBalance(!showBalance)}
-                    className="p-2 rounded-lg hover:bg-muted transition-colors"
-                  >
-                    {showBalance ? (
-                      <Eye className="w-5 h-5 text-muted-foreground" />
-                    ) : (
-                      <EyeOff className="w-5 h-5 text-muted-foreground" />
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleRefreshBalance}
+                      disabled={refreshing}
+                      className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+                      title="Refresh balance"
+                    >
+                      <RefreshCw className={`w-4 h-4 text-muted-foreground ${refreshing ? 'animate-spin' : ''}`} />
+                    </button>
+                    <button
+                      onClick={() => setShowBalance(!showBalance)}
+                      className="p-2 rounded-lg hover:bg-muted transition-colors"
+                    >
+                      {showBalance ? (
+                        <Eye className="w-5 h-5 text-muted-foreground" />
+                      ) : (
+                        <EyeOff className="w-5 h-5 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mb-6">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-bold text-foreground">
-                      {showBalance ? privateBalance : "••••••"}
-                    </span>
-                    <span className="text-xl text-muted-foreground">USDC</span>
-                  </div>
+                  {balanceLoading ? (
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-4xl font-bold text-muted-foreground animate-pulse">
+                        •••
+                      </span>
+                      <span className="text-xl text-muted-foreground">USDC</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-4xl font-bold text-foreground">
+                        {showBalance ? privateBalance.toFixed(2) : "••••••"}
+                      </span>
+                      <span className="text-xl text-muted-foreground">USDC</span>
+                    </div>
+                  )}
                   <p className="text-sm text-muted-foreground mt-2 flex items-center gap-1">
                     <Lock className="w-3 h-3" />
-                    Shielded in ShadowPay privacy pool
+                    Private balance held in Privacy Cash pool
                   </p>
                 </div>
 
@@ -208,67 +255,34 @@ const Dashboard = () => {
                 </Link>
               </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border/50 bg-muted/30">
-                      <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Amount
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Received
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Created
-                      </th>
-                      <th className="px-6 py-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
-                    {paymentLinks.map((link) => (
-                      <tr key={link.id} className="hover:bg-muted/20 transition-colors">
-                        <td className="px-6 py-4">
-                          <span className="font-medium text-foreground">
-                            {link.amount === "Any" ? "Any amount" : `${link.amount} ${link.token}`}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`px-2 py-1 rounded-md text-xs font-medium ${
-                              link.status === "active"
-                                ? "bg-green-500/10 text-green-600"
-                                : "bg-muted text-muted-foreground"
-                            }`}
-                          >
-                            {link.status === "active" ? "Active" : "Completed"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-foreground">
-                          {link.received} {link.token}
-                        </td>
-                        <td className="px-6 py-4 text-muted-foreground">
-                          {link.created}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <Copy className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <ExternalLink className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {/* Info Alert */}
+              <div className="p-6 border-b border-border/50">
+                <Alert className="border-blue-500/30 bg-blue-500/5">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-sm text-muted-foreground">
+                    Payment links you create will appear here. Links are stored locally for demo purposes. 
+                    In production, they would be fetched from Privacy Cash via the backend.
+                  </AlertDescription>
+                </Alert>
+              </div>
+
+              {/* Empty State */}
+              <div className="p-12 text-center">
+                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
+                  <Lock className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">
+                  No payment links yet
+                </h3>
+                <p className="text-muted-foreground mb-6">
+                  Create your first payment link to start receiving funds privately
+                </p>
+                <Link to="/create">
+                  <Button>
+                    <Plus className="w-4 h-4" />
+                    Create Your First Link
+                  </Button>
+                </Link>
               </div>
             </motion.div>
           </div>
