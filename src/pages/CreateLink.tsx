@@ -6,34 +6,78 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import { createPrivateLink } from "@/lib/privacyCash";
+import type { AmountType, LinkUsageType } from "@/lib/types";
 
 const CreateLink = () => {
   const [amount, setAmount] = useState("");
-  const [isAnyAmount, setIsAnyAmount] = useState(false);
+  const [amountType, setAmountType] = useState<AmountType>("fixed");
+  const [linkUsageType, setLinkUsageType] = useState<LinkUsageType>("reusable");
   const [linkCreated, setLinkCreated] = useState(false);
   const [copied, setCopied] = useState(false);
-  const generatedLink = "https://pay.privacycash.io/p/3xK9mNq";
+  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [loadingCreate, setLoadingCreate] = useState(false);
+  const [token, setToken] = useState("USDC");
 
-  const handleCreateLink = () => {
-    setLinkCreated(true);
+  const handleCreateLink = async () => {
+    setLoadingCreate(true);
+    try {
+      // Try server first
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        const endpoint = apiUrl ? `${apiUrl}/links` : '/api/links';
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: amountType === "fixed" ? amount : null,
+            token,
+            anyAmount: amountType === "any",
+            linkUsageType,
+          }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          setGeneratedLink(json.link.url);
+          setLinkCreated(true);
+          return;
+        }
+      } catch (e) {
+        // fallback to local stub
+      }
+
+      const link = await createPrivateLink({
+        amount: amountType === "fixed" ? amount : undefined,
+        token,
+        amountType,
+        linkUsageType,
+      });
+      setGeneratedLink(link.url);
+      setLinkCreated(true);
+    } finally {
+      setLoadingCreate(false);
+    }
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(generatedLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (generatedLink) {
+      navigator.clipboard.writeText(generatedLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handleReset = () => {
     setLinkCreated(false);
     setAmount("");
-    setIsAnyAmount(false);
+    setAmountType("fixed");
+    setLinkUsageType("reusable");
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="pt-24 pb-16">
         <div className="container mx-auto px-4">
           <div className="max-w-xl mx-auto">
@@ -78,7 +122,7 @@ const CreateLink = () => {
                         </div>
                         <div>
                           <p className="text-sm font-medium text-foreground">Wallet Connected</p>
-                          <p className="text-xs text-muted-foreground">8xK9...mN3q</p>
+                          <p className="text-xs text-muted-foreground">Private pool ready</p>
                         </div>
                       </div>
                       <span className="px-2 py-1 rounded-md bg-green-500/10 text-green-600 text-xs font-medium">
@@ -86,24 +130,70 @@ const CreateLink = () => {
                       </span>
                     </div>
 
-                    {/* Amount Input */}
+                    {/* Link Type Selection */}
+                    <div className="space-y-3">
+                      <Label className="text-foreground">Link Type</Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* One-time */}
+                        <button
+                          onClick={() => setLinkUsageType("one-time")}
+                          className={`p-4 rounded-lg border-2 transition-all ${
+                            linkUsageType === "one-time"
+                              ? "border-primary bg-primary/5"
+                              : "border-border bg-muted/30"
+                          }`}
+                        >
+                          <div className="text-sm font-semibold text-foreground">
+                            One-Time
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Can be paid once
+                          </div>
+                        </button>
+
+                        {/* Reusable */}
+                        <button
+                          onClick={() => setLinkUsageType("reusable")}
+                          className={`p-4 rounded-lg border-2 transition-all ${
+                            linkUsageType === "reusable"
+                              ? "border-primary bg-primary/5"
+                              : "border-border bg-muted/30"
+                          }`}
+                        >
+                          <div className="text-sm font-semibold text-foreground">
+                            Reusable
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Multiple payments
+                          </div>
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {linkUsageType === "one-time"
+                          ? "Link will auto-expire after first payment"
+                          : "Link can accept multiple payments (ideal for donations)"}
+                      </p>
+                    </div>
+
+                    {/* Amount Type Selection */}
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="amount" className="text-foreground">
+                        <Label htmlFor="amountType" className="text-foreground">
                           Amount
                         </Label>
                         <button
-                          onClick={() => setIsAnyAmount(!isAnyAmount)}
+                          onClick={() =>
+                            setAmountType(amountType === "fixed" ? "any" : "fixed")
+                          }
                           className="text-xs text-primary hover:underline"
                         >
-                          {isAnyAmount ? "Set fixed amount" : "Allow any amount"}
+                          {amountType === "fixed" ? "Allow any amount" : "Set fixed amount"}
                         </button>
                       </div>
-                      
-                      {!isAnyAmount ? (
+
+                      {amountType === "fixed" ? (
                         <div className="relative">
                           <Input
-                            id="amount"
                             type="number"
                             placeholder="0.00"
                             value={amount}
@@ -114,7 +204,7 @@ const CreateLink = () => {
                             <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center">
                               <span className="text-[10px] font-bold text-white">$</span>
                             </div>
-                            <span className="text-sm font-medium text-foreground">USDC</span>
+                            <span className="text-sm font-medium text-foreground">{token}</span>
                           </div>
                         </div>
                       ) : (
@@ -127,15 +217,23 @@ const CreateLink = () => {
                     {/* Token Selector */}
                     <div className="space-y-3">
                       <Label className="text-foreground">Token</Label>
-                      <button className="w-full h-12 flex items-center justify-between px-4 rounded-xl border border-border bg-background hover:bg-muted/50 transition-colors">
+                      <div className="w-full h-12 flex items-center justify-between px-4 rounded-xl border border-border bg-background">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
                             <span className="text-xs font-bold text-white">$</span>
                           </div>
-                          <span className="font-medium text-foreground">USDC</span>
+                          <select
+                            value={token}
+                            onChange={(e) => setToken(e.target.value)}
+                            className="bg-transparent outline-none font-medium"
+                          >
+                            <option value="USDC">USDC</option>
+                            <option value="USDT">USDT</option>
+                            <option value="SOL">SOL</option>
+                          </select>
                         </div>
                         <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                      </button>
+                      </div>
                     </div>
 
                     {/* Privacy Level */}
@@ -161,10 +259,10 @@ const CreateLink = () => {
                       size="xl"
                       className="w-full"
                       onClick={handleCreateLink}
-                      disabled={!isAnyAmount && !amount}
+                      disabled={loadingCreate || (amountType === "fixed" && !amount)}
                     >
                       <Lock className="w-5 h-5" />
-                      Create Private Payment Link
+                      {loadingCreate ? "Creating..." : "Create Private Payment Link"}
                     </Button>
                   </motion.div>
                 ) : (
@@ -184,7 +282,7 @@ const CreateLink = () => {
                         Link Created!
                       </h2>
                       <p className="text-muted-foreground">
-                        Share this link to receive private payments
+                        Share this link to receive {linkUsageType === "one-time" ? "a single payment" : "multiple payments"}
                       </p>
                     </div>
 
@@ -210,12 +308,30 @@ const CreateLink = () => {
                       </div>
                     </div>
 
-                    {/* Amount Display */}
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
-                      <span className="text-muted-foreground">Amount</span>
-                      <span className="font-semibold text-foreground">
-                        {isAnyAmount ? "Any amount" : `${amount} USDC`}
-                      </span>
+                    {/* Link Config Summary */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
+                        <span className="text-muted-foreground">Type</span>
+                        <span className="font-semibold text-foreground capitalize">
+                          {linkUsageType === "one-time" ? "One-Time" : "Reusable"}
+                        </span>
+                      </div>
+
+                      {amountType === "fixed" && (
+                        <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
+                          <span className="text-muted-foreground">Amount</span>
+                          <span className="font-semibold text-foreground">
+                            {amount} {token}
+                          </span>
+                        </div>
+                      )}
+
+                      {amountType === "any" && (
+                        <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
+                          <span className="text-muted-foreground">Amount</span>
+                          <span className="font-semibold text-foreground">Sender chooses</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Privacy Badges */}

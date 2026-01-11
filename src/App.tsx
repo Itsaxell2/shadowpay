@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import CreateLink from "./pages/CreateLink";
 import PayLink from "./pages/PayLink";
+import Withdraw from "./pages/Withdraw";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
@@ -20,6 +21,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/create" element={<CreateLink />} />
+          <Route path="/withdraw" element={<Withdraw />} />
           <Route path="/pay/:id" element={<PayLink />} />
           <Route path="/pay" element={<PayLink />} />
           <Route path="/dashboard" element={<Dashboard />} />

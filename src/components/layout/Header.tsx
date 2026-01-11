@@ -1,16 +1,19 @@
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Menu, X } from "lucide-react";
+import { Lock, Menu, X, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useWallet } from "@/hooks/use-wallet";
 
 const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const { connected, publicKey, loading, connect, disconnect } = useWallet();
 
   const navLinks = [
     { to: "/", label: "Home" },
     { to: "/create", label: "Create Link" },
+    { to: "/withdraw", label: "Withdraw" },
     { to: "/dashboard", label: "Dashboard" },
   ];
 
@@ -49,13 +52,32 @@ const Header = () => {
 
           {/* CTA */}
           <div className="hidden md:flex items-center gap-3">
-            <Button variant="ghost" size="sm">
-              Connect Wallet
-            </Button>
-            <Button size="sm">
-              <Lock className="w-4 h-4" />
-              Create Link
-            </Button>
+            {!connected ? (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={connect}
+                disabled={loading}
+              >
+                {loading ? "Connecting..." : "Connect Wallet"}
+              </Button>
+            ) : (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={disconnect}
+                className="text-green-600 hover:text-green-700"
+              >
+                <LogOut className="w-4 h-4 mr-1" />
+                {publicKey?.slice(0, 4)}...{publicKey?.slice(-4)}
+              </Button>
+            )}
+            <Link to="/create">
+              <Button size="sm">
+                <Lock className="w-4 h-4" />
+                Create Link
+              </Button>
+            </Link>
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -97,13 +119,31 @@ const Header = () => {
                 </Link>
               ))}
               <div className="flex flex-col gap-2 pt-2 border-t border-border/30 mt-2">
-                <Button variant="ghost" className="justify-start">
-                  Connect Wallet
-                </Button>
-                <Button className="justify-start">
-                  <Lock className="w-4 h-4" />
-                  Create Link
-                </Button>
+                {!connected ? (
+                  <Button 
+                    variant="ghost" 
+                    className="justify-start"
+                    onClick={connect}
+                    disabled={loading}
+                  >
+                    {loading ? "Connecting..." : "Connect Wallet"}
+                  </Button>
+                ) : (
+                  <Button 
+                    variant="ghost" 
+                    className="justify-start text-green-600 hover:text-green-700"
+                    onClick={disconnect}
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    {publicKey?.slice(0, 4)}...{publicKey?.slice(-4)}
+                  </Button>
+                )}
+                <Link to="/create" onClick={() => setMobileMenuOpen(false)}>
+                  <Button className="justify-start w-full">
+                    <Lock className="w-4 h-4" />
+                    Create Link
+                  </Button>
+                </Link>
               </div>
             </nav>
           </motion.div>

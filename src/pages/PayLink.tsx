@@ -1,24 +1,65 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, Shield, Check, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import { getLinkDetails, payLink } from "@/lib/privacyCash";
 
 const PayLink = () => {
   const [paymentState, setPaymentState] = useState<"confirm" | "processing" | "success">("confirm");
   
-  // Mock payment data
-  const paymentData = {
-    amount: "50.00",
-    token: "USDC",
-  };
+  const [paymentData, setPaymentData] = useState<{ amount?: string; token?: string } | null>({
+    amount: undefined,
+    token: undefined,
+  });
+  const [linkId, setLinkId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    const id = path.split("/").pop();
+    setLinkId(id || null);
+    (async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        const endpoint = apiUrl ? `${apiUrl}/links/${id}` : `/api/links/${id}`;
+        const res = await fetch(endpoint);
+        if (res.ok) {
+          const json = await res.json();
+          const d = json.link;
+          setPaymentData({ amount: d.anyAmount ? undefined : d.amount, token: d.token });
+          return;
+        }
+      } catch (e) {
+        // fallback to stub
+      }
+
+      const d = await getLinkDetails(id);
+      if (d) {
+        setPaymentData({ amount: d.anyAmount ? undefined : d.amount, token: d.token });
+      }
+    })();
+  }, []);
 
   const handlePay = () => {
     setPaymentState("processing");
-    setTimeout(() => {
-      setPaymentState("success");
-    }, 2500);
+    (async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        const endpoint = apiUrl ? `${apiUrl}/links/${linkId}/pay` : `/api/links/${linkId}/pay`;
+        const res = await fetch(endpoint, { method: "POST" });
+        if (res.ok) {
+          setTimeout(() => setPaymentState("success"), 400);
+          return;
+        }
+      } catch (e) {
+        // fallback
+      }
+
+      const res = await payLink(linkId);
+      if (res.success) setTimeout(() => setPaymentState("success"), 400);
+      else setTimeout(() => setPaymentState("confirm"), 400);
+    })();
   };
 
   return (
@@ -60,10 +101,10 @@ const PayLink = () => {
                       <p className="text-muted-foreground text-sm mb-2">Amount to pay</p>
                       <div className="flex items-center justify-center gap-2">
                         <span className="text-4xl font-bold text-foreground">
-                          {paymentData.amount}
+                          {paymentData?.amount ?? "—"}
                         </span>
                         <span className="text-xl text-muted-foreground">
-                          {paymentData.token}
+                          {paymentData?.token ?? "USDC"}
                         </span>
                       </div>
                     </div>
@@ -174,11 +215,11 @@ const PayLink = () => {
                     </p>
 
                     {/* Confirmation Details */}
-                    <div className="p-4 rounded-xl bg-muted/50 border border-border mb-6 text-left">
+                      <div className="p-4 rounded-xl bg-muted/50 border border-border mb-6 text-left">
                       <div className="flex justify-between items-center mb-3">
                         <span className="text-muted-foreground">Amount</span>
                         <span className="font-semibold text-foreground">
-                          {paymentData.amount} {paymentData.token}
+                          {paymentData?.amount ?? "Any"} {paymentData?.token ?? "USDC"}
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
