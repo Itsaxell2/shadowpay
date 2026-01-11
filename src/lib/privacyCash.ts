@@ -168,14 +168,14 @@ export async function getAllLinks(): Promise<PaymentLink[]> {
     // Fix old USDC tokens to SOL
     if (link.token === 'USDC') {
       link.token = 'SOL' as any;
-      links[link.id] = link;
+      links[link.linkId] = link;
       hasUpdates = true;
     }
     
     // Delete corrupted links (no amount for fixed type)
     if (link.amountType === 'fixed' && (!link.amount || link.amount === '—' || link.amount === 'undefined')) {
-      console.log(`🗑️ Auto-deleting corrupted link: ${link.id} (invalid amount)`);
-      delete links[link.id];
+      console.log(`🗑️ Auto-deleting corrupted link: ${link.linkId} (invalid amount)`);
+      delete links[link.linkId];
       hasUpdates = true;
       return; // Skip this link
     }
@@ -183,7 +183,7 @@ export async function getAllLinks(): Promise<PaymentLink[]> {
     // Update expired links
     if (link.expiresAt && Date.now() > link.expiresAt && link.status !== "expired") {
       link.status = "expired";
-      links[link.id] = link;
+      links[link.linkId] = link;
       hasUpdates = true;
     }
     
