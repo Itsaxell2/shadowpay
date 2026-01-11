@@ -27,7 +27,7 @@ const PayLink = () => {
         if (res.ok) {
           const json = await res.json();
           const d = json.link;
-          setPaymentData({ amount: d.anyAmount ? undefined : d.amount, token: d.token });
+          setPaymentData({ amount: d.amountType === 'any' ? undefined : d.amount, token: d.token });
           return;
         }
       } catch (e) {
@@ -36,7 +36,7 @@ const PayLink = () => {
 
       const d = await getLinkDetails(id);
       if (d) {
-        setPaymentData({ amount: d.anyAmount ? undefined : d.amount, token: d.token });
+        setPaymentData({ amount: d.amountType === 'any' ? undefined : d.amount, token: d.token });
       }
     })();
   }, []);
@@ -92,7 +92,7 @@ const PayLink = () => {
                         Private Payment
                       </h1>
                       <p className="text-sm text-muted-foreground">
-                        Powered by Privacy Cash
+                        Powered by ShadowPay
                       </p>
                     </div>
 
@@ -137,7 +137,7 @@ const PayLink = () => {
                     {/* Privacy Note */}
                     <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 mb-6">
                       <p className="text-sm text-muted-foreground text-center">
-                        Payment will be routed through Privacy Cash.
+                        Payment will be routed through ShadowPay privacy pool.
                         <br />
                         <span className="text-primary font-medium">No on-chain link between you and the recipient.</span>
                       </p>
@@ -176,7 +176,7 @@ const PayLink = () => {
                       Processing Payment
                     </h2>
                     <p className="text-muted-foreground mb-6">
-                      Routing through Privacy Cash pool...
+                      Routing through ShadowPay privacy pool...
                     </p>
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <p className="flex items-center justify-center gap-2">

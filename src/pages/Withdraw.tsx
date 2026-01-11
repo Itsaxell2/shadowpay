@@ -93,7 +93,7 @@ const Withdraw = () => {
     setWithdrawing(true);
 
     try {
-      // Use real Privacy Cash SDK via server
+      // Use real ShadowPay SDK via server
       const apiPath = token === "SOL" ? "/withdraw/sol" : "/withdraw/spl";
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const endpoint = apiUrl ? `${apiUrl}${apiPath}` : `/api${apiPath}`;
@@ -323,7 +323,7 @@ const Withdraw = () => {
                           <div>
                             <p className="text-sm font-medium text-foreground">Non-Custodial Privacy</p>
                             <p className="text-sm text-muted-foreground mt-1">
-                              Your funds are secured by Privacy Cash smart contracts. No intermediary holds your keys.
+                              Your funds are secured by ShadowPay smart contracts. No intermediary holds your keys.
                             </p>
                           </div>
                         </div>

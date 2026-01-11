@@ -19,21 +19,21 @@ dotenv.config();
  * 
  * CORE PRINCIPLE: This backend NEVER holds or manages funds.
  * 
- * All deposits and withdrawals are routed directly through the Privacy Cash SDK.
+ * All deposits and withdrawals are routed directly through the ShadowPay Protocol.
  * - We store link METADATA only (link ID, commitment, status)
- * - Funds go to Privacy Cash pool (autonomous, non-custodial)
- * - Commitments prove deposits in Privacy Cash, NOT in ShadowPay
+ * - Funds go to ShadowPay privacy pool (autonomous, non-custodial)
+ * - Commitments prove deposits in ShadowPay privacy pool, NOT in ShadowPay backend
  * 
  * ENDPOINTS:
  * POST /auth/login         → Verify Phantom wallet signature, issue JWT
  * POST /auth/verify        → Validate JWT token
  * POST /links              → Create receive link (metadata only)
  * GET  /links/:id          → Retrieve link metadata
- * POST /links/:id/pay      → Deposit to Privacy Cash pool (backend initiates)
- * POST /links/:id/claim    → Withdraw from Privacy Cash pool (recipient receives)
+ * POST /links/:id/pay      → Deposit to ShadowPay privacy pool (backend initiates)
+ * POST /links/:id/claim    → Withdraw from ShadowPay privacy pool (recipient receives)
  * POST /withdraw/sol       → OWNER-ONLY: Direct SOL withdrawal from pool
  * POST /withdraw/spl       → OWNER-ONLY: Direct SPL withdrawal from pool
- * GET  /balance            → Check Privacy Cash pool balance
+ * GET  /balance            → Check ShadowPay pool balance
  * 
  * SECURITY MODEL:
  * - JWT tokens for authenticated endpoints (24h expiry)
@@ -49,8 +49,8 @@ const OWNER = process.env.PRIVATE_KEY; // base58 or json array depending on usag
 let client = null;
 
 /**
- * Initialize Privacy Cash SDK client
- * This client connects to the Solana RPC and Privacy Cash pool contract
+ * Initialize ShadowPay Protocol client
+ * This client connects to the Solana RPC and ShadowPay pool contract
  * 
  * IMPORTANT: The 'owner' field is used for demo withdrawals only.
  * Production deployments should use an on-chain Program/Protocol instead.
@@ -73,7 +73,7 @@ const LINKS_FILE = path.resolve(__dirname, "links.json");
 
 /**
  * Load all link metadata from persistent storage
- * This is NOT fund storage — funds are in Privacy Cash pool
+ * This is NOT fund storage — funds are in ShadowPay privacy pool
  */
 async function loadLinks() {
   try {
@@ -87,7 +87,7 @@ async function loadLinks() {
 /**
  * Save link metadata to persistent storage
  * This persists: link ID, commitment (proof of deposit), status, amount
- * Funds themselves are NOT stored here — they're in Privacy Cash
+ * Funds themselves are NOT stored here — they're in ShadowPay privacy pool
  */
 async function saveLinks(m) {
   await fs.writeFile(LINKS_FILE, JSON.stringify(m, null, 2), "utf-8");
@@ -157,7 +157,7 @@ app.post("/auth/verify", authMiddleware, (req, res) => {
  * 
  * Create a new receive link (metadata only)
  * This creates NO funds or contracts — just a record that says
- * "funds from this link should go to Privacy Cash pool with this ID"
+ * "funds from this link should go to ShadowPay privacy pool with this ID"
  * 
  * Body: { amount, token, anyAmount }
  * Returns: { id, url, amount, token, status: 'created', commitment: null }
@@ -216,17 +216,17 @@ app.get("/links/:id", async (req, res) => {
 /**
  * POST /links/:id/pay
  * 
- * DEPOSIT TO PRIVACY CASH POOL
+ * DEPOSIT TO SHADOWPAY PRIVACY POOL
  * Called by frontend when payer wants to send funds
  * 
  * This endpoint:
- * 1. Calls PrivacyCash.deposit() to send funds to pool
+ * 1. Calls ShadowPay.deposit() to send funds to pool
  * 2. Gets commitment back (proof of deposit)
  * 3. Stores commitment in link metadata (enables future withdrawal)
  * 4. Marks link as "paid"
  * 
- * CRITICAL: Funds are NOT in ShadowPay — they're in Privacy Cash pool
- * The commitment is proof that Privacy Cash holds the funds for this link
+ * CRITICAL: Funds are NOT in ShadowPay backend — they're in ShadowPay privacy pool
+ * The commitment is proof that ShadowPay protocol holds the funds for this link
  * 
  * Body: { amount, token }
  * Returns: { link: { ...metadata with commitment } }
@@ -255,7 +255,7 @@ app.post("/links/:id/pay", async (req, res) => {
     }
 
     try {
-      // Call Privacy Cash SDK to deposit
+      // Call ShadowPay Protocol to deposit
       const c = initClient();
       const commitment = await c.deposit({ amount, token });
 
@@ -275,9 +275,9 @@ app.post("/links/:id/pay", async (req, res) => {
 
       return res.json({ success: true, link });
     } catch (sdkErr) {
-      console.error("Privacy Cash deposit error:", sdkErr);
+      console.error("ShadowPay deposit error:", sdkErr);
       return res.status(500).json({ 
-        error: "Deposit to Privacy Cash pool failed",
+        error: "Deposit to ShadowPay privacy pool failed",
         details: sdkErr.message 
       });
     }
@@ -290,18 +290,18 @@ app.post("/links/:id/pay", async (req, res) => {
 /**
  * POST /links/:id/claim (PROTECTED - requires JWT)
  * 
- * WITHDRAW FROM PRIVACY CASH POOL
+ * WITHDRAW FROM SHADOWPAY PRIVACY POOL
  * Called by recipient to claim/withdraw funds
  * 
  * This endpoint:
  * 1. Validates JWT (recipient authenticated)
  * 2. Loads link and validates it's been paid
- * 3. Uses commitment to withdraw from Privacy Cash pool
+ * 3. Uses commitment to withdraw from ShadowPay privacy pool
  * 4. Funds transfer directly to recipient wallet
  * 5. Marks link as "withdrawn"
  * 
- * CRITICAL: Funds come from Privacy Cash pool, NOT ShadowPay
- * We use the commitment to tell Privacy Cash which deposit to release
+ * CRITICAL: Funds come from ShadowPay privacy pool, NOT ShadowPay backend
+ * We use the commitment to tell ShadowPay protocol which deposit to release
  * Recipient receives funds DIRECTLY — we never touch them
  * 
  * Body: { recipientWallet }
@@ -321,6 +321,15 @@ app.post("/links/:id/claim", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "Recipient wallet required" });
     }
 
+    // Guard: Validate Solana address format
+    try {
+      new PublicKey(recipientWallet);
+    } catch (err) {
+      return res.status(400).json({ 
+        error: "Invalid Solana wallet address. Please check the address and try again." 
+      });
+    }
+
     // Guard: Link must be paid before withdrawal
     if (!link.paid) {
       return res.status(400).json({ error: "Link must be paid before withdrawal" });
@@ -335,12 +344,12 @@ app.post("/links/:id/claim", authMiddleware, async (req, res) => {
     if (!link.commitment) {
       return res.status(500).json({ 
         error: "CRITICAL: Link marked paid but no commitment found. " +
-               "This indicates deposit to Privacy Cash did not complete."
+               "This indicates deposit to ShadowPay privacy pool did not complete."
       });
     }
 
     try {
-      // Call Privacy Cash SDK to withdraw using commitment
+      // Call ShadowPay Protocol to withdraw using commitment
       const c = initClient();
       
       // Determine token type and call appropriate method
@@ -374,9 +383,9 @@ app.post("/links/:id/claim", authMiddleware, async (req, res) => {
         txHash: result.signature || result.txHash || "pending"
       });
     } catch (sdkErr) {
-      console.error("Privacy Cash withdrawal error:", sdkErr);
+      console.error("ShadowPay withdrawal error:", sdkErr);
       return res.status(500).json({ 
-        error: "Withdrawal from Privacy Cash pool failed",
+        error: "Withdrawal from ShadowPay privacy pool failed",
         details: sdkErr.message 
       });
     }
@@ -488,7 +497,7 @@ app.post("/withdraw/sol", authMiddleware, async (req, res) => {
 /**
  * GET /balance (PROTECTED - requires JWT)
  * 
- * Check Privacy Cash pool balance
+ * Check ShadowPay privacy pool balance
  * Shows how much is available in the pool (not managed by us, just reported)
  * 
  * Returns: { balance }
@@ -513,6 +522,6 @@ app.get("/balance", authMiddleware, async (req, res) => {
 const PORT = process.env.PORT || 3333;
 app.listen(PORT, () => {
   console.log(`🚀 ShadowPay Backend listening on http://localhost:${PORT}`);
-  console.log(`📦 Privacy Cash pool initialized (RPC: ${RPC})`);
-  console.log(`🔐 Non-custodial mode: Funds routed to Privacy Cash SDK`);
+  console.log(`📦 ShadowPay privacy pool initialized (RPC: ${RPC})`);
+  console.log(`🔐 Non-custodial mode: Funds routed to ShadowPay Protocol`);
 });

@@ -1,7 +1,7 @@
 /**
- * Privacy Cash SDK wrapper
+ * ShadowPay Protocol wrapper
  * Handles payment links, deposits, and withdrawals
- * Non-custodial: all funds secured on-chain by Privacy Cash contracts
+ * Non-custodial: all funds secured on-chain by ShadowPay contracts
  */
 
 import type {
@@ -12,8 +12,8 @@ import type {
   WithdrawOptions,
 } from "./types";
 
-const LINKS_STORAGE_KEY = "privacycash_links";
-const BALANCE_STORAGE_KEY = "privacycash_balance";
+const LINKS_STORAGE_KEY = "shadowpay_links";
+const BALANCE_STORAGE_KEY = "shadowpay_balance";
 
 // ==================== Link Management ====================
 
@@ -153,7 +153,7 @@ export async function canPayLink(linkId?: string | null): Promise<boolean> {
 
 /**
  * Get current private balance from local state
- * In production: would query Privacy Cash smart contract
+ * In production: would query ShadowPay smart contract
  */
 export async function getPrivateBalance(): Promise<number> {
   const balance = localStorage.getItem(BALANCE_STORAGE_KEY);
@@ -162,18 +162,18 @@ export async function getPrivateBalance(): Promise<number> {
 }
 
 /**
- * Simulate deposit to Privacy Cash pool
- * In production: calls Privacy Cash SDK depositSPL() or deposit()
+ * Simulate deposit to ShadowPay privacy pool
+ * In production: calls ShadowPay Protocol depositSPL() or deposit()
  * 
- * Non-custodial: funds are locked in Privacy Cash contract
+ * Non-custodial: funds are locked in ShadowPay contract
  * User can withdraw to any destination wallet later
  */
 export async function depositToPrivacyPool(
   opts: DepositOptions
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
-    // TODO: Integrate with actual Privacy Cash SDK
-    // Example: const result = await privacyCash.depositSPL({ amount: opts.amount, mintAddress: ... })
+    // TODO: Integrate with actual ShadowPay Protocol
+    // Example: const result = await shadowpay.depositSPL({ amount: opts.amount, mintAddress: ... })
     
     const currentBalance = await getPrivateBalance();
     const newBalance = currentBalance + opts.amount;
@@ -195,7 +195,7 @@ export async function depositToPrivacyPool(
 }
 
 /**
- * Withdraw from Privacy Cash pool to destination wallet
+ * Withdraw from ShadowPay privacy pool to destination wallet
  * Non-custodial: breaks on-chain link between sender/receiver
  * 
  * @param opts - Withdrawal configuration with privacy considerations
@@ -205,8 +205,8 @@ export async function withdrawFromPrivacyPool(
   opts: WithdrawOptions
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
-    // TODO: Integrate with actual Privacy Cash SDK
-    // Example: const result = await privacyCash.withdrawSPL({
+    // TODO: Integrate with actual ShadowPay Protocol
+    // Example: const result = await shadowpay.withdrawSPL({
     //   amount: opts.amount,
     //   mintAddress: ...,
     //   recipientAddress: opts.recipient

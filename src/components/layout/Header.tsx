@@ -25,11 +25,13 @@ const Header = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-glow transition-transform group-hover:scale-105">
-              <Lock className="w-5 h-5 text-primary-foreground" />
-            </div>
+            <img 
+              src="/shadow.png" 
+              alt="ShadowPay" 
+              className="w-9 h-9 object-contain transition-transform group-hover:scale-105" 
+            />
             <span className="font-semibold text-lg text-foreground hidden sm:block">
-              Privacy Cash
+              ShadowPay
             </span>
           </Link>
 

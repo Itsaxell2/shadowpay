@@ -56,7 +56,7 @@ export interface WithdrawalContext {
 }
 
 /**
- * Privacy Cash transaction options
+ * ShadowPay transaction options
  */
 export interface WithdrawOptions {
   amount: number;

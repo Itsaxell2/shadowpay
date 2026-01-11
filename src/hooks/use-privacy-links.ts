@@ -1,5 +1,5 @@
 /**
- * React Hook for Privacy Cash Link Management
+ * React Hook for ShadowPay Link Management
  * 
  * This hook provides a clean interface to the link payment flow
  * for use in React components.
@@ -43,7 +43,7 @@ export function usePrivacyLinks() {
   );
 
   /**
-   * Pay via a link (deposit to Privacy Cash pool)
+   * Pay via a link (deposit to ShadowPay privacy pool)
    * 
    * This deposits funds to the pool and binds the commitment to the link.
    * After this, the link is "paid" and ready to be claimed.
@@ -68,7 +68,7 @@ export function usePrivacyLinks() {
   );
 
   /**
-   * Claim a link (withdraw from Privacy Cash pool)
+   * Claim a link (withdraw from ShadowPay privacy pool)
    * 
    * This withdraws the funds from the pool to the recipient's wallet.
    * The link must be "paid" and must have a commitment.

@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+server/node_modules/
+
+# Backend files (not needed for frontend deploy)
+server/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+dist/
+.cache/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary
+tmp/
+temp/
+
+# Documentation (optional - remove if you want docs on Vercel)
+*.md
+!README.md
+
+# Config files not needed in production
+.prettierrc
+.eslintrc.js
+.eslintrc.json
+.prettierignore
+.gitignore

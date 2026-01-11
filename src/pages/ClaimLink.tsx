@@ -1,20 +1,27 @@
 /**
- * Claim Link Page
+ * Withdraw Link Page
  * 
- * This page allows users to claim a payment link they received.
+ * This page allows recipients to WITHDRAW funds from a receive link.
  * 
- * Flow:
- * 1. User has received a link ID from someone who paid them
- * 2. They enter the link ID and their wallet address
- * 3. System validates the link can be claimed
- * 4. They authorize the claim (sign transaction)
- * 5. Privacy Cash withdraws funds to their wallet
+ * IMPORTANT TERMINOLOGY:
+ * - This is NOT a "claim" (bearer token model)
+ * - This is NOT "anonymous claiming"
+ * - This IS an explicit WITHDRAWAL to a specified wallet
+ * 
+ * How It Works:
+ * 1. Sender creates a receive link and shares the link ID
+ * 2. Payer deposits funds to Privacy Cash pool (link becomes "paid")
+ * 3. Recipient (you) enters link ID + YOUR wallet address
+ * 4. System validates link is paid and has a commitment
+ * 5. You authorize the withdrawal (JWT authentication)
+ * 6. Privacy Cash pool releases funds DIRECTLY to your wallet
  * 
  * Security:
- * - Link must be "paid" (have a commitment)
- * - Link cannot be claimed twice
- * - Recipient address is never pre-set
- * - Each claim is a fresh withdrawal from Privacy Cash
+ * - Link must be "paid" (have a valid commitment)
+ * - Link cannot be withdrawn twice (status check)
+ * - Recipient wallet is EXPLICITLY provided (not anonymous)
+ * - Each withdrawal requires authentication
+ * - Funds come from Privacy Cash pool, NOT ShadowPay backend
  */
 
 import { useState } from "react";
@@ -102,10 +109,10 @@ const ClaimLink = () => {
           className="text-center mb-12"
         >
           <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-            Claim Your Payment
+            Withdraw Your Payment
           </h1>
           <p className="text-muted-foreground text-lg">
-            Enter the link ID you received. Funds will be sent to your wallet.
+            Enter the link ID and your wallet address. Funds will be withdrawn from the Privacy Cash pool to your wallet.
           </p>
         </motion.div>
 
@@ -175,7 +182,7 @@ const ClaimLink = () => {
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-2">
-              Funds will be sent directly to this address from the Privacy Cash pool.
+              Funds will be sent directly to this address from the ShadowPay privacy pool.
             </p>
           </div>
 
@@ -201,7 +208,7 @@ const ClaimLink = () => {
             <h3 className="font-semibold text-blue-700 mb-2">How it works:</h3>
             <ol className="text-sm text-blue-600 space-y-1 list-decimal list-inside">
               <li>You provide your wallet address</li>
-              <li>We withdraw from the Privacy Cash pool</li>
+              <li>We withdraw from the ShadowPay privacy pool</li>
               <li>Funds are sent directly to your wallet</li>
               <li>No one (not even us) can prevent the withdrawal</li>
             </ol>
@@ -219,7 +226,7 @@ const ClaimLink = () => {
           <div className="space-y-2 text-sm text-muted-foreground">
             <p>✓ Your wallet address is never stored in the link</p>
             <p>✓ The sender cannot see your address</p>
-            <p>✓ Funds are in Privacy Cash contracts (non-custodial)</p>
+            <p>✓ Funds are in ShadowPay contracts (non-custodial)</p>
             <p>✓ Only you can claim with the correct link ID</p>
           </div>
         </motion.div>
@@ -250,7 +257,7 @@ const ClaimLink = () => {
                   </p>
                 </div>
                 <p className="text-sm text-green-600">
-                  Funds have been withdrawn from the Privacy Cash pool and sent to your wallet.
+                  Funds have been withdrawn from the ShadowPay privacy pool and sent to your wallet.
                 </p>
               </div>
             )}

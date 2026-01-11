@@ -87,7 +87,7 @@ const Dashboard = () => {
                   </div>
                   <p className="text-sm text-muted-foreground mt-2 flex items-center gap-1">
                     <Lock className="w-3 h-3" />
-                    Shielded in Privacy Cash pool
+                    Shielded in ShadowPay privacy pool
                   </p>
                 </div>
 

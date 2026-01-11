@@ -34,7 +34,7 @@ const HeroSection = () => {
           >
             <Shield className="w-4 h-4 text-primary" />
             <span className="text-sm font-medium text-primary">
-              Powered by Privacy Cash on Solana
+              Powered by ShadowPay on Solana
             </span>
           </motion.div>
 

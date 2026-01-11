@@ -91,10 +91,10 @@ const CreateLink = () => {
                 <Lock className="w-7 h-7 text-primary-foreground" />
               </div>
               <h1 className="text-3xl font-bold text-foreground mb-3">
-                Create Private Payment Link
+                Create Receive Link
               </h1>
               <p className="text-muted-foreground">
-                Generate a link to receive payments without revealing your wallet
+                Generate a link to receive payments. Share the link — recipients withdraw to their own wallets.
               </p>
             </motion.div>
 
@@ -249,7 +249,7 @@ const CreateLink = () => {
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground mt-2">
-                        Payment routed through Privacy Cash pool. No on-chain link between sender and receiver.
+                        Payment routed through ShadowPay privacy pool. No on-chain link between sender and receiver.
                       </p>
                     </div>
 

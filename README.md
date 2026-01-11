@@ -1,6 +1,74 @@
 # ShadowPay - Privacy-First Payment Links on Solana
 
-**A secure, privacy-preserving payment link platform powered by the Privacy Cash SDK.**
+**A secure, privacy-preserving payment link platform powered by the Privacy Cash Protocol.**
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SHADOWPAY ARCHITECTURE                        │
+│                     (Non-Custodial Model)                        │
+└─────────────────────────────────────────────────────────────────┘
+
+                    ┌──────────────┐
+                    │   SENDER     │
+                    │  (Creator)   │
+                    └──────┬───────┘
+                           │ 1. Create Link
+                           ↓
+        ┌────────────────────────────────────┐
+        │    SHADOWPAY FRONTEND (React)      │
+        │  ┌──────────────────────────────┐  │
+        │  │ • Link Creation UI           │  │
+        │  │ • Payment Page               │  │
+        │  │ • Withdrawal Page            │  │
+        │  │ • Privacy Guidance           │  │
+        │  └──────────────────────────────┘  │
+        └────────┬──────────────┬────────────┘
+                 │              │
+         2. API Calls    5. Fetch Link
+                 ↓              ↓
+        ┌───────────────────────────────────┐
+        │   SHADOWPAY BACKEND (Express)     │
+        │  ┌─────────────────────────────┐  │
+        │  │ • JWT Authentication        │  │
+        │  │ • Link Metadata Storage     │  │
+        │  │ • Commitment Management     │  │
+        │  │ • Privacy Cash SDK Wrapper  │  │
+        │  └─────────────────────────────┘  │
+        └────┬──────────────────────┬───────┘
+             │                      │
+     3. deposit()          6. withdraw(commitment)
+             │                      │
+             ↓                      ↓
+┌────────────────────────────────────────────────┐
+│       PRIVACY CASH PROTOCOL (On-Chain)         │
+│  ┌──────────────────────────────────────────┐  │
+│  │  PRIVACY POOL (Smart Contract)           │  │
+│  │  • Holds all deposited funds             │  │
+│  │  • Verifies commitments                  │  │
+│  │  • Executes withdrawals                  │  │
+│  │  • Guarantees privacy via mixing         │  │
+│  └──────────────────────────────────────────┘  │
+└───────────┬──────────────────────┬─────────────┘
+            │                      │
+   4. Returns Commitment  7. Releases Funds
+            │                      │
+            ↓                      ↓
+    ┌──────────────┐      ┌──────────────┐
+    │    PAYER     │      │  RECIPIENT   │
+    │ (Depositor)  │      │ (Withdrawer) │
+    └──────────────┘      └──────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  KEY PRINCIPLES:                                                 │
+│  • Funds NEVER held by ShadowPay backend                        │
+│  • All funds in Privacy Cash on-chain pool                      │
+│  • Backend stores METADATA only (link ID, commitment, status)   │
+│  • Users sign withdrawals with their own wallets                │
+│  • Privacy guaranteed by Privacy Cash Protocol                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## 🔒 What is ShadowPay?
 
@@ -11,7 +79,7 @@ ShadowPay lets you:
 - **Authenticate** using just your Solana wallet (no passwords!)
 - **Track transactions** on the blockchain
 
-All powered by the **Privacy Cash SDK** for maximum privacy.
+All powered by the **ShadowPay Protocol** for maximum privacy.
 
 ## ✨ Key Features
 
@@ -35,7 +103,7 @@ All powered by the **Privacy Cash SDK** for maximum privacy.
 
 ### 🎯 Privacy Features
 - **Wallet hiding** (links don't reveal recipient)
-- **Transaction mixing** (Privacy Cash pool)
+- **Transaction mixing** (ShadowPay privacy pool)
 - **Withdrawal guidance** (5 privacy heuristics)
 - **Real-time privacy score** (0-100)
 - **Smart recommendations** (split withdrawals, timing, amounts)
@@ -50,7 +118,14 @@ All powered by the **Privacy Cash SDK** for maximum privacy.
 
 See **QUICKSTART.md** for a 5-minute setup guide.
 
-### 1-Minute Overview
+### 1-Minute Deploy to Vercel 🚀
+```bash
+npm i -g vercel
+vercel --prod
+```
+**Done!** Your app is live. See [QUICK_DEPLOY.md](QUICK_DEPLOY.md)
+
+### Local Development
 ```bash
 # Backend
 cd server
@@ -69,10 +144,19 @@ Then visit http://localhost:5173 and connect your Phantom wallet!
 | Document | Purpose |
 |----------|---------|
 | **QUICKSTART.md** | 5-minute setup guide |
+| **VERCEL_DEPLOYMENT.md** | 🚀 Deploy to Vercel (frontend-only or full) |
+| **WALLET_CONNECTION_FIX.md** | 🆕 Wallet works without backend (hackathon mode) |
+| **DEMO_VS_PRODUCTION.md** | 🆕 Demo vs Production architecture explained |
 | **DEPLOYMENT.md** | Testnet & production setup |
 | **ADVANCED_FEATURES.md** | Architecture & implementation |
 | **FEATURES.md** | Detailed feature descriptions |
 | **INTEGRATION.md** | API integration guide |
+
+> **For Reviewers/Auditors:** Start with [DEMO_VS_PRODUCTION.md](DEMO_VS_PRODUCTION.md) to understand our architectural choices and security model.
+
+> **⚡ Quick Fix:** Wallet not connecting? See [WALLET_CONNECTION_FIX.md](WALLET_CONNECTION_FIX.md) — wallet now works even if backend is offline!
+
+> **🚀 Deploy Now:** Ready to go live? See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for one-click Vercel deployment!
 
 ## 🔑 Environment Variables
 
@@ -100,7 +184,7 @@ CORS_ORIGIN=http://localhost:5173
 - [x] TweetNaCl encryption
 - [x] Message signing & verification
 
-### 🔐 Real Privacy Cash SDK
+### 🔐 Real ShadowPay Protocol
 - [x] Actual SDK withdrawal integration
 - [x] SOL and SPL token support
 - [x] Transaction hash returns
@@ -162,7 +246,7 @@ Client: Store token + use in all requests
   ↓
 Protected endpoints verify Authorization header
   ↓
-Real Privacy Cash SDK withdrawals
+Real ShadowPay Protocol withdrawals
   ↓
 Transaction broadcast to Solana testnet
 ```
@@ -281,7 +365,7 @@ shadowpay/
 
 **Built with ❤️ for privacy-conscious Solana users**
 
-Made with Solana ⚡ Privacy Cash 🔐 TypeScript 💙
+Made with Solana ⚡ ShadowPay 🔐 TypeScript 💙
 
 The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 

@@ -21,7 +21,7 @@ const Footer = () => {
             </p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Lock className="w-3 h-3" />
-              <span>Powered by Privacy Cash SDK</span>
+              <span>Powered by ShadowPay Protocol</span>
             </div>
           </div>
 
@@ -76,7 +76,7 @@ const Footer = () => {
 
         <div className="border-t border-border/30 mt-8 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-xs text-muted-foreground">
-            © 2026 Privacy Cash. All rights reserved.
+            © 2026 ShadowPay. All rights reserved.
           </p>
           <p className="text-xs text-muted-foreground">
             Built on Solana
