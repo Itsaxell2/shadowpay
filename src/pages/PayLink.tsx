@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
-import { getLinkDetails, payLink } from "@/lib/privacyCash";
+import { getLinkDetails, payLink, depositToPrivacyPool } from "@/lib/privacyCash";
 import { useWallet } from "@/hooks/use-wallet";
 import { 
   Connection, 
@@ -220,6 +220,18 @@ const PayLink = () => {
 
       // Update localStorage for demo
       await payLink(linkId);
+      
+      // Add funds to Privacy Cash balance (simulate deposit to privacy pool)
+      try {
+        const depositAmount = parseFloat(paymentData.amount);
+        await depositToPrivacyPool({
+          amount: depositAmount,
+          token: paymentData.token as any || 'SOL',
+        });
+        console.log(`💰 Added ${depositAmount} ${paymentData.token} to privacy pool balance`);
+      } catch (err) {
+        console.warn('Failed to update balance:', err);
+      }
       
       // Show success toast
       toast.success('Payment Confirmed!', {

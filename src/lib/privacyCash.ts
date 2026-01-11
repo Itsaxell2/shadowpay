@@ -149,6 +149,36 @@ export async function canPayLink(linkId?: string | null): Promise<boolean> {
   return true;
 }
 
+/**
+ * Get all payment links
+ * @returns Array of all links, sorted by creation date (newest first)
+ */
+export async function getAllLinks(): Promise<PaymentLink[]> {
+  const links = loadLinks();
+  const linkArray = Object.values(links);
+  
+  // Sort by creation date, newest first
+  linkArray.sort((a, b) => b.createdAt - a.createdAt);
+  
+  // Update expired links
+  let hasUpdates = false;
+  linkArray.forEach(link => {
+    if (link.expiresAt && Date.now() > link.expiresAt && link.status !== "expired") {
+      link.status = "expired";
+      hasUpdates = true;
+    }
+  });
+  
+  if (hasUpdates) {
+    saveLinks(links);
+  }
+  
+  // Simulate network delay
+  await new Promise((r) => setTimeout(r, 200));
+  
+  return linkArray;
+}
+
 // ==================== Balance & Deposits ====================
 
 /**
@@ -245,6 +275,7 @@ export default {
   getLinkDetails,
   payLink,
   canPayLink,
+  getAllLinks,
   getPrivateBalance,
   depositToPrivacyPool,
   withdrawFromPrivacyPool,
