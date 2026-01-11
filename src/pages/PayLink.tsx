@@ -7,6 +7,13 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getLinkDetails, payLink } from "@/lib/privacyCash";
 import { useWallet } from "@/hooks/use-wallet";
+import { 
+  Connection, 
+  PublicKey, 
+  Transaction, 
+  SystemProgram,
+  LAMPORTS_PER_SOL 
+} from "@solana/web3.js";
 
 const PayLink = () => {
   const { connected, publicKey, connect } = useWallet();
@@ -67,12 +74,26 @@ const PayLink = () => {
         throw new Error("Phantom wallet not found. Please install Phantom extension.");
       }
 
-      console.log("💳 Initiating payment...");
+      console.log("💳 Initiating REAL devnet payment...");
       console.log("Amount:", paymentData.amount, paymentData.token);
       console.log("Link ID:", linkId);
       console.log("Wallet:", publicKey);
 
-      // Try backend first (real Privacy Cash SDK integration)
+      // Get network from env (default devnet)
+      const network = import.meta.env.VITE_SOLANA_NETWORK || 'devnet';
+      const rpcUrl = network === 'devnet' 
+        ? 'https://api.devnet.solana.com'
+        : network === 'testnet'
+        ? 'https://api.testnet.solana.com'
+        : 'https://api.mainnet-beta.solana.com';
+
+      console.log(`🌐 Network: ${network}`);
+      console.log(`🔗 RPC: ${rpcUrl}`);
+
+      // Create Solana connection
+      const connection = new Connection(rpcUrl, 'confirmed');
+
+      // Try backend first (Privacy Cash SDK integration)
       try {
         const apiUrl = import.meta.env.VITE_API_URL || '';
         if (apiUrl) {
@@ -82,42 +103,93 @@ const PayLink = () => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               amount: paymentData.amount,
-              token: paymentData.token || "USDC",
+              token: paymentData.token || "SOL",
+              network,
             }),
           });
 
           if (res.ok) {
             const data = await res.json();
-            console.log("✅ Payment successful via backend", data);
+            console.log("✅ Payment successful via Privacy Cash SDK", data);
             setTimeout(() => setPaymentState("success"), 400);
             return;
           } else {
             const errorData = await res.json();
-            console.warn("Backend payment failed:", errorData);
+            console.warn("Backend payment failed:", errorData.error || 'Unknown error');
           }
         }
       } catch (e) {
-        console.warn("Backend not available, using demo mode:", e);
+        console.warn("Backend not available, using direct Solana transaction");
       }
 
-      // Demo mode: Show Phantom popup for signature (simulation)
-      console.log("🎭 Demo mode: Simulating payment...");
+      // Direct Solana transaction (REAL devnet transaction)
+      console.log("🚀 Creating REAL Solana transaction on", network);
       
-      // Request signature to simulate real transaction
-      const message = `Pay ${paymentData.amount} ${paymentData.token} via ShadowPay\nLink: ${linkId}\nTimestamp: ${Date.now()}`;
-      const messageBytes = new TextEncoder().encode(message);
-      
-      console.log("📝 Requesting signature from Phantom...");
-      await phantom.signMessage(messageBytes);
-      console.log("✅ Signature received (demo payment)");
+      // For demo, we'll send to a burn address (or you can specify recipient)
+      // In production, this should be the Privacy Cash pool address
+      const recipientAddress = "11111111111111111111111111111112"; // Burn address for demo
+      const recipient = new PublicKey(recipientAddress);
+      const sender = new PublicKey(publicKey);
 
-      // Fallback to localStorage demo
-      const res = await payLink(linkId);
-      if (res.success) {
-        setTimeout(() => setPaymentState("success"), 400);
-      } else {
-        throw new Error("Payment failed");
+      // Convert amount to lamports (1 SOL = 1e9 lamports)
+      const amount = parseFloat(paymentData.amount);
+      const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
+
+      console.log(`💰 Sending ${amount} SOL (${lamports} lamports)`);
+      console.log(`📤 From: ${sender.toBase58().slice(0, 8)}...`);
+      console.log(`📥 To: ${recipient.toBase58().slice(0, 8)}... (demo burn address)`);
+
+      // Check balance first
+      const balance = await connection.getBalance(sender);
+      console.log(`💼 Your balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+
+      if (balance < lamports) {
+        throw new Error(
+          `Insufficient balance. You have ${(balance / LAMPORTS_PER_SOL).toFixed(4)} SOL, ` +
+          `but need ${amount} SOL. Get devnet SOL: https://faucet.solana.com`
+        );
       }
+
+      // Create transaction
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: sender,
+          toPubkey: recipient,
+          lamports,
+        })
+      );
+
+      // Get recent blockhash
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = sender;
+
+      console.log("📝 Requesting transaction signature from Phantom...");
+      
+      // Sign and send transaction via Phantom
+      const { signature } = await phantom.signAndSendTransaction(transaction);
+      
+      console.log("⏳ Transaction sent, waiting for confirmation...");
+      console.log(`🔗 Signature: ${signature}`);
+
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      });
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${confirmation.value.err}`);
+      }
+
+      console.log("✅ Transaction confirmed!");
+      console.log(`🔍 View on explorer: https://explorer.solana.com/tx/${signature}?cluster=${network}`);
+
+      // Update localStorage for demo
+      await payLink(linkId);
+      
+      setTimeout(() => setPaymentState("success"), 400);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Payment failed";
       console.error("❌ Payment error:", message);
