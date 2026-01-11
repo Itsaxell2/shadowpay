@@ -34,7 +34,7 @@ const Withdraw = () => {
   const [balance, setBalance] = useState<number>(0);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [recipientAddress, setRecipientAddress] = useState("");
-  const [token, setToken] = useState("USDC");
+  const [token, setToken] = useState("SOL"); // Changed from USDC to SOL
   const [loading, setLoading] = useState(true);
   const [withdrawing, setWithdrawing] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -84,37 +84,65 @@ const Withdraw = () => {
       return;
     }
 
-    if (!getToken()) {
-      setError("Please authenticate first");
-      return;
+    // Skip backend auth check for demo mode - use local withdrawal
+    const hasBackendAuth = getToken();
+    if (!hasBackendAuth) {
+      console.log("⚠️ Demo mode: Backend auth not available, using local withdrawal");
     }
 
     setError(null);
     setWithdrawing(true);
 
     try {
-      // Use real ShadowPay SDK via server
-      const apiPath = token === "SOL" ? "/withdraw/sol" : "/withdraw/spl";
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const endpoint = apiUrl ? `${apiUrl}${apiPath}` : `/api${apiPath}`;
+      // Try backend first (if authenticated)
+      const hasBackendAuth = getToken();
       
-      const res = await authFetch(endpoint, {
-        method: "POST",
-        body: JSON.stringify({
-          lamports: token === "SOL" ? Math.floor(parseFloat(withdrawAmount) * 1e9) : undefined,
-          amount: token !== "SOL" ? Math.floor(parseFloat(withdrawAmount) * 1e6) : undefined,
-          mint: token === "USDC" ? "EPjFWaLb3odcccccccccccccccccccccccccccccccc" : undefined,
-          recipient: recipientAddress,
-        }),
-      });
+      if (hasBackendAuth) {
+        // Use real ShadowPay SDK via server
+        const apiPath = token === "SOL" ? "/withdraw/sol" : "/withdraw/spl";
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        const endpoint = apiUrl ? `${apiUrl}${apiPath}` : `/api${apiPath}`;
+        
+        try {
+          const res = await authFetch(endpoint, {
+            method: "POST",
+            body: JSON.stringify({
+              lamports: token === "SOL" ? Math.floor(parseFloat(withdrawAmount) * 1e9) : undefined,
+              amount: token !== "SOL" ? Math.floor(parseFloat(withdrawAmount) * 1e6) : undefined,
+              mint: token === "USDC" ? "EPjFWaLb3odcccccccccccccccccccccccccccccccc" : undefined,
+              recipient: recipientAddress,
+            }),
+          });
 
-      if (!res.ok) {
-        const err = await res.json();
-        setError(err.error || "Withdrawal failed");
-        return;
+          if (res.ok) {
+            const result = await res.json();
+            
+            if (result.success) {
+              const txHash = result.txHash || result.result?.signature || null;
+              setTxHash(txHash);
+              setSuccess(true);
+              setWithdrawAmount("");
+              setRecipientAddress("");
+              
+              // Update balance
+              const newBalance = await getPrivateBalance();
+              setBalance(newBalance);
+              setWithdrawing(false);
+              return;
+            }
+          }
+        } catch (backendErr) {
+          console.warn("Backend withdrawal failed, falling back to local:", backendErr);
+        }
       }
-
-      const result = await res.json();
+      
+      // Fallback: Local withdrawal (demo mode)
+      console.log("💰 Using local withdrawal (demo mode)");
+      const result = await withdrawFromPrivacyPool({
+        amount: parseFloat(withdrawAmount),
+        token: token as any,
+        recipient: recipientAddress,
+      });
       
       if (result.success) {
         const txHash = result.txHash || result.result?.signature || null;

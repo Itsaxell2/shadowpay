@@ -213,14 +213,14 @@ const Dashboard = () => {
                       <span className="text-4xl font-bold text-muted-foreground animate-pulse">
                         •••
                       </span>
-                      <span className="text-xl text-muted-foreground">USDC</span>
+                      <span className="text-xl text-muted-foreground">SOL</span>
                     </div>
                   ) : (
                     <div className="flex items-baseline gap-2">
                       <span className="text-4xl font-bold text-foreground">
                         {showBalance ? privateBalance.toFixed(2) : "••••••"}
                       </span>
-                      <span className="text-xl text-muted-foreground">USDC</span>
+                      <span className="text-xl text-muted-foreground">SOL</span>
                     </div>
                   )}
                   <p className="text-sm text-muted-foreground mt-2 flex items-center gap-1">
