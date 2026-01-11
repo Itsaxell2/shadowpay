@@ -160,13 +160,34 @@ export async function getAllLinks(): Promise<PaymentLink[]> {
   // Sort by creation date, newest first
   linkArray.sort((a, b) => b.createdAt - a.createdAt);
   
-  // Update expired links
+  // Auto-fix and cleanup corrupted links
   let hasUpdates = false;
+  const validLinks: PaymentLink[] = [];
+  
   linkArray.forEach(link => {
-    if (link.expiresAt && Date.now() > link.expiresAt && link.status !== "expired") {
-      link.status = "expired";
+    // Fix old USDC tokens to SOL
+    if (link.token === 'USDC') {
+      link.token = 'SOL' as any;
+      links[link.id] = link;
       hasUpdates = true;
     }
+    
+    // Delete corrupted links (no amount for fixed type)
+    if (link.amountType === 'fixed' && (!link.amount || link.amount === '—' || link.amount === 'undefined')) {
+      console.log(`🗑️ Auto-deleting corrupted link: ${link.id} (invalid amount)`);
+      delete links[link.id];
+      hasUpdates = true;
+      return; // Skip this link
+    }
+    
+    // Update expired links
+    if (link.expiresAt && Date.now() > link.expiresAt && link.status !== "expired") {
+      link.status = "expired";
+      links[link.id] = link;
+      hasUpdates = true;
+    }
+    
+    validLinks.push(link);
   });
   
   if (hasUpdates) {
@@ -176,7 +197,7 @@ export async function getAllLinks(): Promise<PaymentLink[]> {
   // Simulate network delay
   await new Promise((r) => setTimeout(r, 200));
   
-  return linkArray;
+  return validLinks;
 }
 
 // ==================== Balance & Deposits ====================

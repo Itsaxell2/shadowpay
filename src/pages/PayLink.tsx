@@ -50,6 +50,17 @@ const PayLink = () => {
 
       const d = await getLinkDetails(id);
       if (d) {
+        // Auto-delete corrupted links
+        if (d.amountType === 'fixed' && (!d.amount || d.amount === '—' || d.amount === 'undefined')) {
+          console.log('🗑️ Corrupted link detected, cleaning up...');
+          const links = JSON.parse(localStorage.getItem('shadowpay_links') || '{}');
+          delete links[id || ''];
+          localStorage.setItem('shadowpay_links', JSON.stringify(links));
+          setError('This link is corrupted and has been removed. Please ask sender to create a new link.');
+          setTimeout(() => window.location.href = '/', 3000);
+          return;
+        }
+        
         // Check if link has expired
         const storedLink = localStorage.getItem(`link_${id}`);
         if (storedLink) {
@@ -60,6 +71,8 @@ const PayLink = () => {
           }
         }
         setPaymentData({ amount: d.amountType === 'any' ? undefined : d.amount, token: d.token });
+      } else {
+        setError('Payment link not found');
       }
     })();
   }, []);
