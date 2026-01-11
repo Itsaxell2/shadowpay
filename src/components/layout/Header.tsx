@@ -54,14 +54,24 @@ const Header = () => {
 
           {/* CTA */}
           <div className="hidden md:flex items-center gap-3">
-            {!connected ? (
+            {loading ? (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                disabled
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                  Checking...
+                </div>
+              </Button>
+            ) : !connected ? (
               <Button 
                 variant="ghost" 
                 size="sm"
                 onClick={connect}
-                disabled={loading}
               >
-                {loading ? "Connecting..." : "Connect Wallet"}
+                Connect Wallet
               </Button>
             ) : (
               <Button 

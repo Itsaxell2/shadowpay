@@ -14,22 +14,132 @@ export function useWallet() {
     connected: false,
     publicKey: null,
     token: null,
-    loading: false,
+    loading: true, // Start with loading true
     error: null,
   });
 
-  // Check if already authenticated on mount
+  // Check if already authenticated on mount and auto-reconnect
   useEffect(() => {
-    const token = getToken();
-    const wallet = getWallet();
-    if (token && wallet) {
-      setState({
-        connected: true,
-        publicKey: wallet,
-        token,
-        loading: false,
-        error: null,
-      });
+    const initWallet = async () => {
+      const token = getToken();
+      const wallet = getWallet();
+      
+      // Check if we have stored wallet data
+      if (wallet) {
+        try {
+          const phantom = (window as any).phantom?.solana;
+          
+          if (!phantom) {
+            console.warn("Phantom not found, clearing stored wallet data");
+            localStorage.removeItem("shadowpay_wallet");
+            localStorage.removeItem("shadowpay_token");
+            setState({
+              connected: false,
+              publicKey: null,
+              token: null,
+              loading: false,
+              error: null,
+            });
+            return;
+          }
+
+          // Check if Phantom is already connected
+          if (phantom.isConnected) {
+            console.log("✅ Wallet already connected to Phantom:", wallet.slice(0, 8) + "...");
+            setState({
+              connected: true,
+              publicKey: wallet,
+              token,
+              loading: false,
+              error: null,
+            });
+          } else {
+            // Try to reconnect silently
+            console.log("🔄 Attempting silent reconnection...");
+            try {
+              const resp = await phantom.connect({ onlyIfTrusted: true });
+              const publicKey = resp.publicKey?.toString();
+              
+              if (publicKey && publicKey === wallet) {
+                console.log("✅ Silently reconnected:", publicKey.slice(0, 8) + "...");
+                setState({
+                  connected: true,
+                  publicKey,
+                  token,
+                  loading: false,
+                  error: null,
+                });
+              } else {
+                // Clear stored data if wallet changed
+                console.warn("Wallet address changed, clearing stored data");
+                localStorage.removeItem("shadowpay_wallet");
+                localStorage.removeItem("shadowpay_token");
+                setState({
+                  connected: false,
+                  publicKey: null,
+                  token: null,
+                  loading: false,
+                  error: null,
+                });
+              }
+            } catch (err) {
+              // Silent reconnect failed, user needs to connect manually
+              console.log("ℹ️ Silent reconnect failed, manual connection required");
+              setState({
+                connected: false,
+                publicKey: null,
+                token: null,
+                loading: false,
+                error: null,
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Error initializing wallet:", err);
+          setState({
+            connected: false,
+            publicKey: null,
+            token: null,
+            loading: false,
+            error: null,
+          });
+        }
+      } else {
+        // No stored wallet
+        setState({
+          connected: false,
+          publicKey: null,
+          token: null,
+          loading: false,
+          error: null,
+        });
+      }
+    };
+
+    initWallet();
+
+    // Listen for Phantom disconnect events
+    const phantom = (window as any).phantom?.solana;
+    if (phantom) {
+      const handleDisconnect = () => {
+        console.log("👋 Phantom disconnected");
+        localStorage.removeItem("shadowpay_wallet");
+        localStorage.removeItem("shadowpay_token");
+        setState({
+          connected: false,
+          publicKey: null,
+          token: null,
+          loading: false,
+          error: null,
+        });
+      };
+
+      phantom.on("disconnect", handleDisconnect);
+
+      // Cleanup
+      return () => {
+        phantom.off("disconnect", handleDisconnect);
+      };
     }
   }, []);
 
