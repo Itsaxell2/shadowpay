@@ -91,6 +91,16 @@ const PayLink = () => {
       return;
     }
 
+    // Token validation: For devnet demo, only SOL is supported
+    const token = paymentData.token || 'SOL';
+    if (token !== 'SOL') {
+      setError(`Sorry, only SOL payments are supported on devnet. This link requires ${token}.`);
+      toast.error('Token Not Supported', {
+        description: `This link requires ${token}, but only SOL is available on devnet demo.`,
+      });
+      return;
+    }
+
     setError(null);
     setPaymentState("processing");
 
@@ -102,7 +112,7 @@ const PayLink = () => {
       }
 
       console.log("💳 Initiating REAL devnet payment...");
-      console.log("Amount:", paymentData.amount, paymentData.token);
+      console.log("Amount:", paymentData.amount, token);
       console.log("Link ID:", linkId);
       console.log("Wallet:", publicKey);
 
@@ -162,13 +172,13 @@ const PayLink = () => {
       const amount = parseFloat(paymentData.amount);
       const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
 
-      console.log(`💰 Sending ${amount} SOL (${lamports} lamports)`);
+      console.log(`💰 Sending ${amount} ${token} (${lamports} lamports)`);
       console.log(`📤 From: ${sender.toBase58().slice(0, 8)}...`);
       console.log(`📥 To: ${recipient.toBase58().slice(0, 8)}... (demo burn address)`);
 
       // Check balance first
       const balance = await connection.getBalance(sender);
-      console.log(`💼 Your balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+      console.log(`💼 Your balance: ${balance / LAMPORTS_PER_SOL} ${token}`);
 
       if (balance < lamports) {
         throw new Error(

@@ -20,7 +20,7 @@ const CreateLink = () => {
   const [copied, setCopied] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [loadingCreate, setLoadingCreate] = useState(false);
-  const [token, setToken] = useState("USDC");
+  const [token, setToken] = useState("SOL"); // Changed from USDC to SOL for devnet
   const [expiryHours, setExpiryHours] = useState<string>("");
 
   const handleCreateLink = async () => {
@@ -133,9 +133,9 @@ const CreateLink = () => {
               <Alert className="border-blue-500/30 bg-blue-500/5">
                 <Info className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">How it works:</span> Links do not hold funds. 
-                  Payments are routed through Privacy Cash contracts. 
-                  Withdrawals require an explicit recipient address—this is not anonymous claiming.
+                  <span className="font-medium text-foreground">Devnet Demo:</span> Currently only SOL payments are supported. 
+                  Payments are routed through Privacy Cash contracts for enhanced privacy. 
+                  Links are payment requests, not bearer tokens.
                 </AlertDescription>
               </Alert>
             </motion.div>
