@@ -145,7 +145,7 @@ const Withdraw = () => {
       });
       
       if (result.success) {
-        const txHash = result.txHash || result.result?.signature || null;
+        const txHash = result.txHash || null;
         setTxHash(txHash);
         setSuccess(true);
         setWithdrawAmount("");
