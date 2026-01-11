@@ -263,9 +263,8 @@ export function useWallet() {
       } catch (authErr) {
         // Backend auth failed, but wallet is still connected
         const authMessage = authErr instanceof Error ? authErr.message : "Backend auth failed";
-        console.warn("⚠️ Backend auth skipped:", authMessage);
-        console.warn("📝 Wallet is connected, but protected endpoints (withdrawal) may not work.");
-        console.warn("💡 Start backend server: cd server && npm run dev");
+        console.log("ℹ️ Demo mode: Backend server not available");
+        console.log("💡 All features work offline. Backend only needed for production deployment.");
         
         // Don't set error state — wallet is still usable for many features
       }

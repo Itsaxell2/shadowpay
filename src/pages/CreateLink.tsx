@@ -24,6 +24,18 @@ const CreateLink = () => {
   const [expiryHours, setExpiryHours] = useState<string>("");
 
   const handleCreateLink = async () => {
+    // Validate amount for fixed type
+    if (amountType === "fixed") {
+      const amountNum = parseFloat(amount);
+      if (!amount || isNaN(amountNum) || amountNum <= 0) {
+        toast.error('Invalid Amount', {
+          description: 'Please enter a valid amount greater than 0',
+        });
+        setLoadingCreate(false);
+        return;
+      }
+    }
+
     setLoadingCreate(true);
     try {
       // Try server first
