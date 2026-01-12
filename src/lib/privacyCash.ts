@@ -361,28 +361,5 @@ export default {
   createPrivateLink,
   getLinkDetails,
   payLink,
-export async function getAllLinks(): Promise<PaymentLink[]> {
-  try {
-    const apiUrl = import.meta.env.VITE_API_URL || '';
-    const endpoint = apiUrl ? `${apiUrl}/api/links` : '/api/links';
-    const res = await authFetch(endpoint);
-    if (!res.ok) throw new Error('Backend unavailable');
-    const data = await res.json();
-    if (Array.isArray(data.links)) {
-      // Optionally update localStorage for offline fallback
-      const linksObj: Record<string, PaymentLink> = {};
-      data.links.forEach((link: PaymentLink) => {
-        linksObj[link.linkId] = link;
-      });
-      saveLinks(linksObj);
-      return data.links;
-    }
-    throw new Error('Invalid backend response');
-  } catch (err) {
-    // Fallback to localStorage if backend fails
-    const links = loadLinks();
-    const linkArray = Object.values(links);
-    linkArray.sort((a, b) => b.createdAt - a.createdAt);
-    return linkArray;
-  }
-}
+  getAllLinks,
+};
