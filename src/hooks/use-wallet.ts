@@ -150,27 +150,48 @@ export function useWallet() {
   const connect = async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
+      // Wait a moment for Phantom to be fully available
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Check if Phantom is installed with better detection
-      const phantom = (window as any).phantom?.solana;
+      let phantom = (window as any).phantom?.solana;
+      
+      // Fallback check for window.solana
+      if (!phantom) {
+        phantom = (window as any).solana;
+        if (phantom && !phantom.isPhantom) {
+          phantom = null;
+        }
+      }
       
       if (!phantom) {
-        // Check if window.solana exists (some wallets)
-        const solana = (window as any).solana;
-        if (solana?.isPhantom) {
-          throw new Error("Phantom wallet detected but not properly initialized. Please refresh the page.");
-        }
         throw new Error("Phantom wallet not found. Please install Phantom extension from phantom.app");
       }
 
       console.log("🦊 Phantom wallet detected, requesting connection...");
 
       // Request connection with timeout
-      const connectPromise = phantom.connect();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Connection timed out. Please try again.")), 30000)
-      );
-      
-      const resp = await Promise.race([connectPromise, timeoutPromise]) as any;
+      let resp: any;
+      try {
+        const connectPromise = phantom.connect();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Connection timed out. Please try again.")), 30000)
+        );
+        
+        resp = await Promise.race([connectPromise, timeoutPromise]);
+      } catch (connectErr) {
+        const errMsg = connectErr instanceof Error ? connectErr.message : String(connectErr);
+        // Handle common Phantom errors
+        if (errMsg.includes('timed out')) {
+          throw new Error("Wallet connection timed out. Please try again.");
+        } else if (errMsg.includes('User rejected') || errMsg.includes('rejected')) {
+          throw new Error("Connection request rejected");
+        } else if (errMsg === "Unexpected error") {
+          // This is a Phantom-specific error, try reconnecting
+          throw new Error("Wallet connection failed. Please try refreshing the page and try again.");
+        }
+        throw connectErr;
+      }
       
       const publicKey = resp.publicKey?.toString();
       if (!publicKey) {

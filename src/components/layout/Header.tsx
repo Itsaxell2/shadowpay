@@ -23,13 +23,35 @@ const Header = () => {
     <header className="fixed top-0 left-0 right-0 z-50 glass-card border-b border-border/30">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
+          {/* Logo - ShadowPay with gravity effect */}
           <Link to="/" className="flex items-center group">
-            <img 
-              src="/pay.png" 
-              alt="ShadowPay" 
-              className="h-14 w-auto object-contain transition-transform group-hover:scale-105" 
-            />
+            <style>{`
+              @keyframes gravity-float {
+                0%, 100% {
+                  transform: translateY(0px) scaleY(1);
+                  letter-spacing: -0.05em;
+                }
+                50% {
+                  transform: translateY(-8px) scaleY(0.95);
+                  letter-spacing: 0.02em;
+                }
+              }
+              .gravity-text {
+                font-size: 1.5rem;
+                font-weight: 800;
+                font-family: 'Courier New', monospace;
+                letter-spacing: -0.05em;
+                background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                text-shadow: 0 0 30px rgba(167, 139, 250, 0.5);
+                filter: drop-shadow(0 4px 8px rgba(124, 58, 237, 0.3));
+                animation: gravity-float 3s ease-in-out infinite;
+                transform-origin: center;
+              }
+            `}</style>
+            <span className="gravity-text">ShadowPay</span>
           </Link>
 
           {/* Desktop Nav */}
