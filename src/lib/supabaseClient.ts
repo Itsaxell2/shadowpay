@@ -1,57 +1,67 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Get env vars - Vite automatically exposes VITE_* variables
+let supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+let supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-// Debug logging
-console.log('🔍 Supabase URL:', supabaseUrl ? '✓ Set' : '✗ Not set');
-console.log('🔍 Supabase Key:', supabaseAnonKey ? '✓ Set' : '✗ Not set');
+// Strip quotes if present (sometimes .env files have quotes)
+if (supabaseUrl.startsWith('"') || supabaseUrl.startsWith("'")) {
+  supabaseUrl = supabaseUrl.slice(1, -1);
+}
+if (supabaseAnonKey.startsWith('"') || supabaseAnonKey.startsWith("'")) {
+  supabaseAnonKey = supabaseAnonKey.slice(1, -1);
+}
 
-// Graceful fallback: create a dummy client if env vars not set
-// This allows the app to load and show dashboard/UI
-// Supabase features will fail gracefully when actually accessed
+// Debug: Show what we got
+console.log('🔍 [supabaseClient] Checking environment variables...');
+console.log('   VITE_SUPABASE_URL available:', !!import.meta.env.VITE_SUPABASE_URL);
+console.log('   VITE_SUPABASE_ANON_KEY available:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+console.log('   Final supabaseUrl:', supabaseUrl.substring(0, 30) + (supabaseUrl.length > 30 ? '...' : ''));
+console.log('   Final supabaseAnonKey length:', supabaseAnonKey.length);
+
 let supabase: any = null;
 
 if (supabaseUrl && supabaseAnonKey) {
-  supabase = createClient(supabaseUrl, supabaseAnonKey);
-  console.log('✅ Supabase initialized successfully');
+  try {
+    supabase = createClient(supabaseUrl, supabaseAnonKey);
+    console.log('✅ [supabaseClient] Supabase initialized successfully with URL:', supabaseUrl);
+  } catch (error) {
+    console.error('❌ [supabaseClient] Failed to initialize Supabase:', error);
+    supabase = createDummyClient();
+  }
 } else {
-  console.error('❌ CRITICAL: Supabase env vars not found!');
-  console.error('Please check .env.development has:');
-  console.error('  VITE_SUPABASE_URL=...');
-  console.error('  VITE_SUPABASE_ANON_KEY=...');
-  
-  // Create a dummy client that returns proper error responses
-  const createErrorResponse = (operation: string) => {
-    return {
-      data: null,
-      error: new Error(`Supabase not configured - ${operation} failed`)
-    };
-  };
+  console.error('❌ [supabaseClient] CRITICAL ERROR: Supabase env vars not found!');
+  console.error('   VITE_SUPABASE_URL: ' + (supabaseUrl || 'NOT SET'));
+  console.error('   VITE_SUPABASE_ANON_KEY: ' + (supabaseAnonKey || 'NOT SET'));
+  console.error('   Please ensure .env.development contains these variables');
+  supabase = createDummyClient();
+}
 
-  supabase = {
+// Create dummy client for when Supabase is not configured
+function createDummyClient() {
+  const errorResponse = (op: string) => ({
+    data: null,
+    error: new Error(`Supabase not configured - ${op} failed`)
+  });
+
+  return {
     from: (table: string) => ({
-      select: async () => createErrorResponse('select'),
-      insert: async (data: any) => createErrorResponse('insert'),
-      update: async (data: any) => createErrorResponse('update'),
-      delete: async () => createErrorResponse('delete'),
-      eq: function(col: string, val: any) { 
-        this.column = col;
-        this.value = val;
-        return this; 
-      },
+      select: async () => errorResponse('select'),
+      insert: async (data: any) => errorResponse('insert'),
+      update: async (data: any) => errorResponse('update'),
+      delete: async () => errorResponse('delete'),
+      eq: function(col: string, val: any) { return this; },
       limit: function(n: number) { return this; },
-      single: async function() { return createErrorResponse('single'); },
+      single: async function() { return errorResponse('single'); },
       order: function() { return this; },
-      // Chain-able operations
-      select: async function() { return createErrorResponse('select'); },
     }),
-    rpc: async (fn: string, params: any) => createErrorResponse('rpc'),
+    rpc: async (fn: string, params: any) => errorResponse('rpc'),
     auth: {
-      signUp: async () => createErrorResponse('signUp'),
-      signInWithPassword: async () => createErrorResponse('signInWithPassword'),
+      signUp: async () => errorResponse('signUp'),
+      signInWithPassword: async () => errorResponse('signInWithPassword'),
       signOut: async () => ({ error: null }),
       getSession: async () => ({ data: null }),
+      getUser: async () => ({ data: null, error: null }),
     }
   };
 }
