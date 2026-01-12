@@ -6,7 +6,7 @@ export async function createPaymentLink({ creator_id, link_id, amount, token }: 
     .from('payment_links')
     .insert([{ creator_id, link_id, amount, token, status: 'active' }]);
   if (error) throw error;
-  return data[0];
+  return data && data[0] ? data[0] : null;
 }
 
 // Get All Payment Links
@@ -16,7 +16,7 @@ export async function getAllPaymentLinks() {
     .select('*')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return data;
+  return data || [];
 }
 
 // Pay Link
@@ -31,7 +31,7 @@ export async function payLink({ link_id, payer_wallet, amount, tx_hash }: any) {
     .from('payments')
     .insert([{ link_id, payer_wallet, amount, tx_hash }]);
   if (error) throw error;
-  return data[0];
+  return data && data[0] ? data[0] : null;
 }
 
 // Get User Balance
@@ -42,7 +42,7 @@ export async function getUserBalance(user_id: string) {
     .eq('user_id', user_id)
     .single();
   if (error) throw error;
-  return data.balance;
+  return data && data.balance !== undefined ? data.balance : 0;
 }
 
 // Update User Balance
@@ -52,5 +52,5 @@ export async function updateUserBalance(user_id: string, balance: number) {
     .update({ balance })
     .eq('user_id', user_id);
   if (error) throw error;
-  return data[0].balance;
+  return data && (data as any[])[0] && (data as any[])[0].balance !== undefined ? (data as any[])[0].balance : 0;
 }
