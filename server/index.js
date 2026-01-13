@@ -806,14 +806,15 @@ app.get("/balance", authMiddleware, async (req, res) => {
 app.post("/payments/confirm", paymentLimiter, async (req, res) => {
   try {
     res.setHeader('Content-Type', 'application/json');
-    const { linkId, txHash, amount, token } = req.body;
+    const { id, linkId, txHash, amount, token } = req.body;
+    const paymentLinkId = id || linkId; // Frontend sends 'id', we accept both
     
-    if (!linkId) {
-      return res.status(400).json({ error: "linkId required" });
+    if (!paymentLinkId) {
+      return res.status(400).json({ error: "id or linkId required" });
     }
 
     const map = await loadLinks();
-    const link = map[linkId];
+    const link = map[paymentLinkId];
     
     if (!link) {
       return res.status(404).json({ error: "Link not found" });
@@ -830,10 +831,10 @@ app.post("/payments/confirm", paymentLimiter, async (req, res) => {
       link.payment_count = (link.payment_count || 0) + 1;
     }
     
-    map[linkId] = link;
+    map[paymentLinkId] = link;
     await saveLinks(map);
     
-    console.log(`[/payments/confirm] Payment confirmed for link ${linkId}`);
+    console.log(`[/payments/confirm] Payment confirmed for link ${paymentLinkId}`);
 
     return res.json({ success: true, link });
   } catch (err) {
