@@ -638,13 +638,17 @@ app.post("/withdraw/sol", withdrawalLimiter, authMiddleware, async (req, res) =>
  */
 app.get("/api/payment-links", async (req, res) => {
   try {
+    res.setHeader('Content-Type', 'application/json');
+    
     // Try to get user_id from JWT (if auth provided)
     let userId = req.user?.address || req.query.user_id || "";
     
     if (!userId) {
+      console.warn('[/api/payment-links] No user_id provided');
       return res.status(400).json({ error: "user_id required", links: [] });
     }
 
+    console.log(`[/api/payment-links] Fetching links for user: ${userId}`);
     const map = await loadLinks();
     
     // Filter links by creator_id
@@ -652,9 +656,11 @@ app.get("/api/payment-links", async (req, res) => {
       return link.creator_id === userId;
     });
 
+    console.log(`[/api/payment-links] Found ${userLinks.length} links for user ${userId}`);
     return res.json({ success: true, links: userLinks });
   } catch (err) {
-    console.error("Error fetching payment links:", err);
+    console.error("[/api/payment-links] Error:", err);
+    res.setHeader('Content-Type', 'application/json');
     return res.status(500).json({ error: String(err), links: [] });
   }
 });
@@ -669,13 +675,17 @@ app.get("/api/payment-links", async (req, res) => {
  */
 app.get("/api/balance", async (req, res) => {
   try {
+    res.setHeader('Content-Type', 'application/json');
+    
     // Try to get user_id from JWT (if auth provided) or query param
     let userId = req.user?.address || req.query.user_id || "";
     
     if (!userId) {
+      console.warn('[/api/balance] No user_id provided');
       return res.status(400).json({ error: "user_id required", balance: 0 });
     }
 
+    console.log(`[/api/balance] Calculating balance for user: ${userId}`);
     const map = await loadLinks();
     
     // Calculate total received by this user
@@ -688,9 +698,11 @@ app.get("/api/balance", async (req, res) => {
       }
     });
 
+    console.log(`[/api/balance] Balance for user ${userId}: ${totalBalance}`);
     return res.json({ success: true, balance: totalBalance });
   } catch (err) {
-    console.error("Error fetching balance:", err);
+    console.error("[/api/balance] Error:", err);
+    res.setHeader('Content-Type', 'application/json');
     return res.status(500).json({ error: String(err), balance: 0 });
   }
 });

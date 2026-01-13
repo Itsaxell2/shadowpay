@@ -1,10 +1,1 @@
-{
-  "zpddagr": {
-    "id": "zpddagr",
-    "url": "http://localhost:5173/pay/zpddagr",
-    "amount": "50",
-    "token": "USDC",
-    "anyAmount": false,
-    "paid": true
-  }
-}
+{}
