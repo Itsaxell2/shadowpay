@@ -223,6 +223,11 @@ app.post("/auth/verify", authMiddleware, (req, res) => {
 app.post("/links", async (req, res) => {
   try {
     const { amount, token, anyAmount, creator_id, linkUsageType, amountType } = req.body;
+    
+    if (!amount && !anyAmount) {
+      return res.status(400).json({ error: "Amount or anyAmount flag required" });
+    }
+    
     const map = await loadLinks();
     const id = Math.random().toString(36).slice(2, 9);
     const url = `${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/pay/${id}`;
@@ -232,7 +237,7 @@ app.post("/links", async (req, res) => {
       id, 
       url, 
       amount, 
-      token: token || "USDC", 
+      token: token || "SOL", 
       anyAmount: !!anyAmount, 
       amountType: amountType || "fixed",
       linkUsageType: linkUsageType || "reusable",
@@ -244,12 +249,16 @@ app.post("/links", async (req, res) => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+    
     map[id] = link;
     await saveLinks(map);
+    
+    res.setHeader('Content-Type', 'application/json');
     return res.json({ success: true, link });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: String(err) });
+    console.error('❌ Error creating link:', err);
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(500).json({ error: String(err.message || err) });
   }
 });
 

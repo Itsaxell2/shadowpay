@@ -40,8 +40,8 @@ const CreateLink = () => {
     setLoadingCreate(true);
     try {
       // Call backend to create link
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const endpoint = apiUrl ? `${apiUrl}/links` : '/links';
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3333';
+      const endpoint = `${apiUrl}/links`;
       
       const res = await fetch(endpoint, {
         method: "POST",
@@ -56,15 +56,28 @@ const CreateLink = () => {
         }),
       });
 
+      const responseText = await res.text();
+      
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to create link');
+        let error = { error: 'Unknown error' };
+        try {
+          error = JSON.parse(responseText);
+        } catch (e) {
+          console.error('Failed to parse error response:', responseText);
+        }
+        throw new Error(error.error || `Server error: ${res.status}`);
       }
 
-      const json = await res.json();
+      let json;
+      try {
+        json = JSON.parse(responseText);
+      } catch (e) {
+        console.error('Failed to parse response:', responseText);
+        throw new Error('Invalid response from server');
+      }
       
       if (!json.link || !json.link.url) {
-        throw new Error('Invalid response from server');
+        throw new Error('Invalid response from server - missing link data');
       }
 
       setGeneratedLink(json.link.url);
