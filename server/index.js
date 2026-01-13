@@ -142,6 +142,31 @@ async function saveLinks(m) {
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 /**
+ * DEBUG ENDPOINT - Test API connectivity
+ */
+app.get("/api/debug", async (req, res) => {
+  try {
+    res.setHeader('Content-Type', 'application/json');
+    const map = await loadLinks();
+    return res.json({ 
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      totalLinksInDatabase: Object.keys(map).length,
+      links: Object.values(map).map(l => ({
+        id: l.id,
+        creator_id: l.creator_id,
+        amount: l.amount,
+        paid: l.paid
+      }))
+    });
+  } catch (err) {
+    console.error('[/api/debug] Error:', err);
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+/**
  * ═══════════════════════════════════════════════════════════════════════════════
  * AUTHENTICATION ENDPOINTS
  * ═══════════════════════════════════════════════════════════════════════════════
