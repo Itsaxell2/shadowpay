@@ -730,7 +730,7 @@ app.get("/api/payment-links", async (req, res) => {
  * GET /api/balance
  * 
  * Get user's private balance (total received via payment links)
- * Queries total amount from all payments received by this user
+ * Reads from balances table (atomic updates via /payments/confirm)
  * 
  * Returns: { balance }
  */
@@ -746,7 +746,28 @@ app.get("/api/balance", async (req, res) => {
       return res.status(400).json({ error: "user_id required", balance: 0 });
     }
 
-    console.log(`[/api/balance] Calculating balance for user: ${userId}`);
+    console.log(`[/api/balance] Fetching balance for user: ${userId}`);
+
+    // Try to get balance from Supabase balances table (source of truth)
+    if (supabase) {
+      const { data, error } = await supabase
+        .from("balances")
+        .select("balance")
+        .eq("user_id", userId)
+        .single();
+
+      if (!error && data) {
+        console.log(`[/api/balance] Balance from Supabase: ${data.balance}`);
+        return res.json({ success: true, balance: data.balance });
+      }
+
+      if (error && error.code !== "PGRST116") { // PGRST116 = no rows
+        console.warn(`[/api/balance] Supabase error: ${error.message}, falling back to calculation`);
+      }
+    }
+
+    // Fallback: calculate from payment_links table
+    console.log(`[/api/balance] Falling back to calculation from payment_links`);
     const map = await loadLinks();
     
     // Calculate total received by this user
@@ -759,7 +780,7 @@ app.get("/api/balance", async (req, res) => {
       }
     });
 
-    console.log(`[/api/balance] Balance for user ${userId}: ${totalBalance}`);
+    console.log(`[/api/balance] Calculated balance for user ${userId}: ${totalBalance}`);
     return res.json({ success: true, balance: totalBalance });
   } catch (err) {
     console.error("[/api/balance] Error:", err);
@@ -800,43 +821,77 @@ app.get("/balance", authMiddleware, async (req, res) => {
 /**
  * POST /payments/confirm
  * 
- * Confirm payment metadata (for sync after on-chain transaction)
+ * Confirm payment and sync to database atomically
  * Frontend calls this after confirming on-chain transaction
+ * 
+ * This does 3 things atomically via SQL function:
+ * 1. Insert payment record to payments table
+ * 2. Increment payment_count on link
+ * 3. Update creator's balance
  */
 app.post("/payments/confirm", paymentLimiter, async (req, res) => {
   try {
     res.setHeader('Content-Type', 'application/json');
-    const { id, linkId, txHash, amount, token } = req.body;
+    const { id, linkId, txHash, amount, token, payer_wallet } = req.body;
     const paymentLinkId = id || linkId; // Frontend sends 'id', we accept both
     
     if (!paymentLinkId) {
       return res.status(400).json({ error: "id or linkId required" });
     }
 
-    const map = await loadLinks();
-    const link = map[paymentLinkId];
-    
-    if (!link) {
-      return res.status(404).json({ error: "Link not found" });
+    if (!txHash) {
+      return res.status(400).json({ error: "txHash required" });
     }
 
-    // Update link with transaction hash
-    if (txHash) {
-      link.txHash = txHash;
+    if (!amount) {
+      return res.status(400).json({ error: "amount required" });
     }
-    if (!link.paid && amount) {
+
+    // Use Supabase to record payment atomically
+    if (!supabase) {
+      console.warn("[/payments/confirm] Supabase not available, using fallback");
+      // Fallback: update in-memory (not persistent)
+      const map = await loadLinks();
+      const link = map[paymentLinkId];
+      if (!link) {
+        return res.status(404).json({ error: "Link not found" });
+      }
+      link.txHash = txHash;
       link.paid = true;
       link.status = "paid";
       link.paidAt = Date.now();
       link.payment_count = (link.payment_count || 0) + 1;
+      map[paymentLinkId] = link;
+      await saveLinks(map);
+      return res.json({ success: true, link, note: "fallback mode" });
     }
-    
-    map[paymentLinkId] = link;
-    await saveLinks(map);
-    
-    console.log(`[/payments/confirm] Payment confirmed for link ${paymentLinkId}`);
 
-    return res.json({ success: true, link });
+    // Call atomic SQL function
+    const { data, error } = await supabase.rpc("record_payment", {
+      p_link_id: paymentLinkId,
+      p_payer_wallet: payer_wallet || "unknown",
+      p_amount: parseFloat(amount),
+      p_tx_hash: txHash,
+    });
+
+    if (error) {
+      console.error("[/payments/confirm] Supabase RPC error:", error);
+      return res.status(400).json({ error: error.message || "Failed to record payment" });
+    }
+
+    console.log(`[/payments/confirm] ✅ Payment recorded atomically:
+      - Link: ${paymentLinkId}
+      - TX Hash: ${txHash}
+      - Amount: ${amount}
+      - New payment_count: ${data[0]?.new_payment_count}
+      - Creator new_balance: ${data[0]?.new_balance}`);
+
+    return res.json({
+      success: true,
+      payment_recorded: data[0]?.payment_recorded,
+      new_payment_count: data[0]?.new_payment_count,
+      new_balance: data[0]?.new_balance,
+    });
   } catch (err) {
     console.error("[/payments/confirm] Error:", err);
     res.setHeader('Content-Type', 'application/json');

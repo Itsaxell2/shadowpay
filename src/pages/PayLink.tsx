@@ -235,13 +235,15 @@ const PayLink = () => {
             txHash: signature,
             amount: paymentData.amount,
             token: paymentData.token || 'SOL',
+            payer_wallet: publicKey, // Add payer wallet address
           }),
         });
         if (!confirmRes.ok) {
           const errData = await confirmRes.json();
           throw new Error(errData.error || 'Failed to sync payment metadata');
         }
-        console.log('✅ Payment metadata synced to backend');
+        const confirmData = await confirmRes.json();
+        console.log('✅ Payment metadata synced to backend:', confirmData);
       } catch (err) {
         console.error('❌ Failed to sync payment metadata:', err);
         toast.error('Payment Metadata Sync Failed', {
