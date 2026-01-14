@@ -125,104 +125,78 @@ const PayLink = () => {
       // Create Solana connection
       const connection = new Connection(rpcUrl, 'confirmed');
 
-      // Deposit via Privacy Cash SDK (through backend)
-      // Backend handles Privacy Cash SDK integration
-      // Frontend just sends deposit request and waits for commitment
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL;
-        if (!apiUrl) {
-          throw new Error('API_URL not configured. Cannot deposit to Privacy Cash pool.');
-        }
+      const sender = new PublicKey(publicKey);
 
-        console.log("🚀 Initiating Privacy Cash deposit via backend...");
-        
-        const endpoint = `${apiUrl}/links/${linkId}/pay`;
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: paymentData.amount,
-            token: paymentData.token || "SOL",
-            network,
-          }),
-        });
-
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.error || `Deposit failed: ${res.status}`);
-        }
-
-        const data = await res.json();
-        console.log("✅ Deposit to Privacy Cash successful:", {
-          txHash: data.link?.txHash || data.txHash,
-          commitment: data.link?.commitment || data.commitment,
-          amount: paymentData.amount,
-        });
-
-        // Now sign the transaction with Phantom to confirm
-        // (Privacy Cash SDK may require wallet signature for the deposit)
-        const sender = new PublicKey(publicKey);
-        console.log("📝 Requesting transaction confirmation from Phantom...");
-
+      // Step 1: Call backend to initiate deposit to Privacy Cash
+      console.log("🚀 Initiating Privacy Cash deposit via backend...");
       
-      // Sign and send transaction via Phantom
-      const { signature } = await phantom.signAndSendTransaction(transaction);
-      
-      console.log("⏳ Transaction sent, waiting for confirmation...");
-      console.log(`🔗 Signature: ${signature}`);
-
-      // Wait for confirmation
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight,
-      });
-
-      if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${confirmation.value.err}`);
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl) {
+        throw new Error('API_URL not configured. Cannot deposit to Privacy Cash pool.');
       }
 
-      console.log("✅ Transaction confirmed!");
-      const explorer = `https://explorer.solana.com/tx/${signature}?cluster=${network}`;
-      console.log(`🔍 View on explorer: ${explorer}`);
+      const endpoint = `${apiUrl}/links/${linkId}/pay`;
+      const depositRes = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: paymentData.amount,
+          token: paymentData.token || "SOL",
+          network,
+        }),
+      });
 
-      // Save transaction proof
-      setTxSignature(signature);
+      if (!depositRes.ok) {
+        const errorData = await depositRes.json();
+        throw new Error(errorData.error || `Deposit to Privacy Cash failed: ${depositRes.status}`);
+      }
+
+      const depositData = await depositRes.json();
+      console.log("✅ Deposit to Privacy Cash successful:", {
+        txHash: depositData.link?.txHash || depositData.txHash,
+        commitment: depositData.link?.commitment || depositData.commitment,
+        amount: paymentData.amount,
+      });
+
+      // Step 2: Get transaction hash from backend response
+      const txHash = depositData.link?.txHash || depositData.txHash;
+      const commitment = depositData.link?.commitment || depositData.commitment;
+
+      // Step 3: Save transaction proof
+      setTxSignature(txHash);
+      const explorer = `https://explorer.solana.com/tx/${txHash}?cluster=${network}`;
       setExplorerUrl(explorer);
 
-      // === NEW LOGIC: Sync payment metadata to backend ===
+      // Step 4: Sync payment metadata to database
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || '';
-        const confirmEndpoint = apiUrl ? `${apiUrl}/payments/confirm` : '/payments/confirm';
+        const confirmEndpoint = `${apiUrl}/payments/confirm`;
         const confirmRes = await fetch(confirmEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: linkId,
-            txHash: signature,
+            txHash: txHash,
             amount: paymentData.amount,
             token: paymentData.token || 'SOL',
-            payer_wallet: publicKey, // Add payer wallet address
+            payer_wallet: publicKey,
           }),
         });
+
         if (!confirmRes.ok) {
           const errData = await confirmRes.json();
-          throw new Error(errData.error || 'Failed to sync payment metadata');
+          console.warn('Payment metadata sync warning:', errData.error);
+        } else {
+          const confirmData = await confirmRes.json();
+          console.log('✅ Payment metadata synced to backend:', confirmData);
         }
-        const confirmData = await confirmRes.json();
-        console.log('✅ Payment metadata synced to backend:', confirmData);
-      } catch (err) {
-        console.error('❌ Failed to sync payment metadata:', err);
-        toast.error('Payment Metadata Sync Failed', {
-          description: err instanceof Error ? err.message : String(err),
-        });
+      } catch (syncErr) {
+        console.warn('⚠️ Payment metadata sync failed (non-critical):', syncErr);
+        // Don't fail the entire payment for this, just warn
       }
 
-      // === END NEW LOGIC ===
-
-      // Show success toast
+      // Step 5: Show success
       toast.success('Payment Confirmed!', {
-        description: `Transaction sent successfully. View on explorer.`,
+        description: `Transaction sent successfully. Deposit confirmed to Privacy Cash pool.`,
       });
       setTimeout(() => setPaymentState('success'), 400);
     } catch (err) {
