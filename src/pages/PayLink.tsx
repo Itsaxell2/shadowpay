@@ -125,78 +125,45 @@ const PayLink = () => {
       // Create Solana connection
       const connection = new Connection(rpcUrl, 'confirmed');
 
-      // Try backend first (Privacy Cash SDK integration)
+      // Deposit via Privacy Cash SDK (through backend)
+      // Backend handles Privacy Cash SDK integration
+      // Frontend just sends deposit request and waits for commitment
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || '';
-        if (apiUrl) {
-          const endpoint = `${apiUrl}/links/${linkId}/pay`;
-          const res = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              amount: paymentData.amount,
-              token: paymentData.token || "SOL",
-              network,
-            }),
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            console.log("✅ Payment successful via Privacy Cash SDK", data);
-            setTimeout(() => setPaymentState("success"), 400);
-            return;
-          } else {
-            const errorData = await res.json();
-            console.warn("Backend payment failed:", errorData.error || 'Unknown error');
-          }
+        const apiUrl = import.meta.env.VITE_API_URL;
+        if (!apiUrl) {
+          throw new Error('API_URL not configured. Cannot deposit to Privacy Cash pool.');
         }
-      } catch (e) {
-        console.warn("Backend not available, using direct Solana transaction");
-      }
 
-      // Direct Solana transaction (REAL devnet transaction)
-      console.log("🚀 Creating REAL Solana transaction on", network);
-      
-      // For demo, we'll send to a burn address (or you can specify recipient)
-      // In production, this should be the Privacy Cash pool address
-      const recipientAddress = "11111111111111111111111111111112"; // Burn address for demo
-      const recipient = new PublicKey(recipientAddress);
-      const sender = new PublicKey(publicKey);
+        console.log("🚀 Initiating Privacy Cash deposit via backend...");
+        
+        const endpoint = `${apiUrl}/links/${linkId}/pay`;
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: paymentData.amount,
+            token: paymentData.token || "SOL",
+            network,
+          }),
+        });
 
-      // Convert amount to lamports (1 SOL = 1e9 lamports)
-      const amount = parseFloat(paymentData.amount);
-      const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || `Deposit failed: ${res.status}`);
+        }
 
-      console.log(`💰 Sending ${amount} ${token} (${lamports} lamports)`);
-      console.log(`📤 From: ${sender.toBase58().slice(0, 8)}...`);
-      console.log(`📥 To: ${recipient.toBase58().slice(0, 8)}... (demo burn address)`);
+        const data = await res.json();
+        console.log("✅ Deposit to Privacy Cash successful:", {
+          txHash: data.link?.txHash || data.txHash,
+          commitment: data.link?.commitment || data.commitment,
+          amount: paymentData.amount,
+        });
 
-      // Check balance first
-      const balance = await connection.getBalance(sender);
-      console.log(`💼 Your balance: ${balance / LAMPORTS_PER_SOL} ${token}`);
+        // Now sign the transaction with Phantom to confirm
+        // (Privacy Cash SDK may require wallet signature for the deposit)
+        const sender = new PublicKey(publicKey);
+        console.log("📝 Requesting transaction confirmation from Phantom...");
 
-      if (balance < lamports) {
-        throw new Error(
-          `Insufficient balance. You have ${(balance / LAMPORTS_PER_SOL).toFixed(4)} SOL, ` +
-          `but need ${amount} SOL. Get devnet SOL: https://faucet.solana.com`
-        );
-      }
-
-      // Create transaction
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: sender,
-          toPubkey: recipient,
-          lamports,
-        })
-      );
-
-      // Get recent blockhash
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = sender;
-
-      console.log("📝 Requesting transaction signature from Phantom...");
       
       // Sign and send transaction via Phantom
       const { signature } = await phantom.signAndSendTransaction(transaction);
