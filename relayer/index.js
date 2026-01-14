@@ -1,111 +1,195 @@
 import express from "express";
 import dotenv from "dotenv";
 import fs from "fs";
-import { PrivacyCash } from "privacycash";
-import { Keypair } from "@solana/web3.js";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  Transaction,
+  TransactionInstruction,
+} from "@solana/web3.js";
+
+// ⬇️ IMPORT DATA BUILDER (INI PENTING)
+import {
+  buildDepositData,
+  buildWithdrawData,
+} from "./privacycash-builders.js";
 
 dotenv.config();
 
+/* ─────────────────────────────────────
+   BASIC SETUP
+───────────────────────────────────── */
 const app = express();
 app.use(express.json());
 
 /* ─────────────────────────────────────
-   Load relayer keypair
+   ENV
 ───────────────────────────────────── */
-const keypairPath = process.env.RELAYER_KEYPAIR_PATH;
-if (!keypairPath) {
-  throw new Error("RELAYER_KEYPAIR_PATH not set");
+const RPC_URL = process.env.SOLANA_RPC_URL;
+const PROGRAM_ID = process.env.PRIVACYCASH_PROGRAM_ID;
+const RELAYER_KEYPAIR_PATH = process.env.RELAYER_KEYPAIR_PATH;
+
+if (!RPC_URL || !PROGRAM_ID || !RELAYER_KEYPAIR_PATH) {
+  throw new Error("Missing required env");
 }
 
-const secret = JSON.parse(fs.readFileSync(keypairPath, "utf8"));
-const relayerKeypair = Keypair.fromSecretKey(Uint8Array.from(secret));
-
-console.log("🧾 Relayer address:", relayerKeypair.publicKey.toBase58());
-
 /* ─────────────────────────────────────
-   Init Privacy Cash client
+   SOLANA CONNECTION
 ───────────────────────────────────── */
-const client = new PrivacyCash({
-  RPC_url: process.env.RPC_URL,
-  owner: relayerKeypair
-});
+const connection = new Connection(RPC_URL, "confirmed");
 
 /* ─────────────────────────────────────
-   Health check
+   RELAYER KEYPAIR
+───────────────────────────────────── */
+const secret = JSON.parse(
+  fs.readFileSync(RELAYER_KEYPAIR_PATH, "utf8")
+);
+
+const relayerKeypair = Keypair.fromSecretKey(
+  Uint8Array.from(secret)
+);
+
+console.log("🧾 Relayer:", relayerKeypair.publicKey.toBase58());
+
+/* ─────────────────────────────────────
+   HEALTH
 ───────────────────────────────────── */
 app.get("/health", (_, res) => {
-  res.json({ ok: true, relayer: relayerKeypair.publicKey.toBase58() });
+  res.json({
+    ok: true,
+    relayer: relayerKeypair.publicKey.toBase58(),
+  });
 });
 
 /* ─────────────────────────────────────
-   DEPOSIT — called by backend only
+   DEPOSIT
 ───────────────────────────────────── */
 app.post("/deposit", async (req, res) => {
   try {
-    const { lamports } = req.body;
+    const {
+      commitment,
+      amount,
+      assetType,
+      poolAccount,
+      merkleAccount,
+    } = req.body;
 
-    if (!lamports || lamports <= 0) {
-      return res.status(400).json({ error: "lamports required" });
-    }
-
-    const result = await client.deposit({
-      lamports: BigInt(lamports)
-    });
-
-    return res.json({
-      success: true,
-      commitment: "0xPRIVACY_CASH_COMMITMENT_PLACEHOLDER",
-      tx: "PRIVACY_CASH_TX_PLACEHOLDER"
-    });
-  } catch (err) {
-    console.error("❌ deposit error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ─────────────────────────────────────
-   WITHDRAW — called by backend only
-───────────────────────────────────── */
-app.post("/withdraw", async (req, res) => {
-  try {
-    const { commitment, recipient, lamports } = req.body;
-
-    if (!commitment || !recipient || !lamports) {
+    if (!commitment || !poolAccount || !merkleAccount) {
       return res.status(400).json({ error: "missing fields" });
     }
 
-    const result = await client.withdraw({
+    // 1️⃣ Build instruction data
+    const data = buildDepositData(
       commitment,
-      recipient,
-      lamports: BigInt(lamports)
+      amount || 0,
+      assetType || 0
+    );
+
+    // 2️⃣ Instruction
+    const ix = new TransactionInstruction({
+      programId: new PublicKey(PROGRAM_ID),
+      keys: [
+        { pubkey: relayerKeypair.publicKey, isSigner: true, isWritable: false },
+        { pubkey: new PublicKey(poolAccount), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(merkleAccount), isSigner: false, isWritable: true },
+      ],
+      data: Buffer.from(data),
     });
 
-    return res.json({
+    // 3️⃣ Transaction
+    const { blockhash } = await connection.getLatestBlockhash();
+    const tx = new Transaction({
+      feePayer: relayerKeypair.publicKey,
+      recentBlockhash: blockhash,
+    }).add(ix);
+
+    tx.sign(relayerKeypair);
+
+    // 4️⃣ Send
+    const sig = await connection.sendRawTransaction(
+      tx.serialize(),
+      { maxRetries: 3 }
+    );
+
+    res.json({
       success: true,
-      tx: result.tx
+      tx: sig,
     });
+
   } catch (err) {
-    console.error("❌ withdraw error:", err);
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
 /* ─────────────────────────────────────
-   PRIVATE BALANCE (pool)
+   WITHDRAW
 ───────────────────────────────────── */
-app.get("/balance", async (_, res) => {
+app.post("/withdraw", async (req, res) => {
   try {
-    const balance = await client.getBalance();
-    res.json({ success: true, balance });
+    const {
+      root,
+      nullifier,
+      recipient,
+      amount,
+      assetType,
+      poolAccount,
+      merkleAccount,
+      nullifierAccount,
+    } = req.body;
+
+    if (!root || !nullifier || !recipient) {
+      return res.status(400).json({ error: "missing fields" });
+    }
+
+    const data = buildWithdrawData(
+      root,
+      nullifier,
+      amount || 0,
+      assetType || 0
+    );
+
+    const ix = new TransactionInstruction({
+      programId: new PublicKey(PROGRAM_ID),
+      keys: [
+        { pubkey: new PublicKey(poolAccount), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(merkleAccount), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(nullifierAccount), isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(recipient), isSigner: false, isWritable: true },
+      ],
+      data: Buffer.from(data),
+    });
+
+    const { blockhash } = await connection.getLatestBlockhash();
+    const tx = new Transaction({
+      feePayer: relayerKeypair.publicKey,
+      recentBlockhash: blockhash,
+    }).add(ix);
+
+    tx.sign(relayerKeypair);
+
+    const sig = await connection.sendRawTransaction(
+      tx.serialize(),
+      { maxRetries: 3 }
+    );
+
+    res.json({
+      success: true,
+      tx: sig,
+    });
+
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
 /* ─────────────────────────────────────
-   Start
+   START
 ───────────────────────────────────── */
 const PORT = process.env.PORT || 4444;
 app.listen(PORT, () => {
-  console.log(`🚀 Relayer running on port ${PORT}`);
+  console.log(`🚀 Relayer running on ${PORT}`);
 });
+
