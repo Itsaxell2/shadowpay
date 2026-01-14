@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Lock, Copy, Share2, Check, ChevronDown, Shield, ExternalLink, Info } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,7 @@ const CreateLink = () => {
   const [token, setToken] = useState("SOL"); // Changed from USDC to SOL for devnet
   const [expiryHours, setExpiryHours] = useState<string>("");
   const { publicKey } = useWallet();
+  const navigate = useNavigate();
 
   const handleCreateLink = async () => {
     // Validate amount for fixed type
@@ -90,6 +92,11 @@ const CreateLink = () => {
       toast.success('Link Created!', {
         description: 'Your payment link is ready to share',
       });
+
+      // Navigate to Dashboard after 1 second to allow toast to display
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 1000);
     } catch (error) {
       console.error('Error creating link:', error);
       toast.error('Failed to Create Link', {
