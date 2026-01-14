@@ -1,14 +1,24 @@
 // src/lib/api.ts
 
+const getApiUrl = () => {
+  const url = import.meta.env.VITE_API_URL;
+  if (!url) {
+    console.error('VITE_API_URL not configured! API calls will fail.');
+  }
+  return url || '';
+};
+
 export async function fetchPrivateBalance(user_id: string): Promise<number> {
-  const res = await fetch(`/api/balance?user_id=${user_id}`);
+  const apiUrl = getApiUrl();
+  const res = await fetch(`${apiUrl}/api/balance?user_id=${user_id}`);
   if (!res.ok) throw new Error("Failed to fetch balance");
   const data = await res.json();
   return data.balance;
 }
 
 export async function withdrawFromBackend(opts: { user_id: string; amount: number; token: string; recipient: string }): Promise<{ success: boolean; txHash?: string; error?: string }> {
-  const res = await fetch(`/api/withdraw`, {
+  const apiUrl = getApiUrl();
+  const res = await fetch(`${apiUrl}/api/withdraw`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(opts),
@@ -31,8 +41,10 @@ export async function fetchDashboardData(userId?: string): Promise<{ balance: nu
       };
     }
 
+    const apiUrl = getApiUrl();
+
     // Try to fetch balance first
-    const balanceRes = await fetch(`/api/balance?user_id=${encodeURIComponent(userIdForFetch)}`);
+    const balanceRes = await fetch(`${apiUrl}/api/balance?user_id=${encodeURIComponent(userIdForFetch)}`);
     if (!balanceRes.ok) {
       console.error('Balance API error:', await balanceRes.text());
       throw new Error("Failed to fetch balance");
@@ -40,7 +52,7 @@ export async function fetchDashboardData(userId?: string): Promise<{ balance: nu
     const balanceData = await balanceRes.json();
     
     // Try to fetch payment links
-    const linksRes = await fetch(`/api/payment-links?user_id=${encodeURIComponent(userIdForFetch)}`);
+    const linksRes = await fetch(`${apiUrl}/api/payment-links?user_id=${encodeURIComponent(userIdForFetch)}`);
     if (!linksRes.ok) {
       console.error('Payment links API error:', await linksRes.text());
       throw new Error("Failed to fetch payment links");
