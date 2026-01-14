@@ -1,0 +1,10 @@
+{
+  "name": "shadowpay-relayer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "@solana/web3.js": "^1.95.0"
+  }
+}
