@@ -94,10 +94,8 @@ const CreateLink = () => {
         description: 'Your payment link is ready to share',
       });
 
-      // Navigate to Dashboard after 1 second to allow toast to display
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 1000);
+      // DON'T auto-redirect - let user see the link and copy it
+      // User can manually click "Create another link" or "Dashboard"
     } catch (error) {
       console.error('Error creating link:', error);
       toast.error('Failed to Create Link', {

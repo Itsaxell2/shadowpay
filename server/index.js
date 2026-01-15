@@ -307,11 +307,14 @@ app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
     
     let relayerRes;
     try {
+      const relayerAuthSecret = process.env.RELAYER_AUTH_SECRET || "shadowpay-relayer-secret-123";
+      console.log(`🔐 Using relayer auth: ${relayerAuthSecret.substring(0, 15)}...`);
+      
       relayerRes = await fetch(`${relayerUrl}/deposit`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "x-relayer-auth": process.env.RELAYER_SECRET || ""
+          "x-relayer-auth": relayerAuthSecret
         },
         body: JSON.stringify({
           lamports,
