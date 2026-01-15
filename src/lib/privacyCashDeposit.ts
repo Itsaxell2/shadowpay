@@ -11,7 +11,8 @@
  */
 
 import { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { initHasher } from "@lightprotocol/hasher.rs";
+// Note: initHasher will be used when we integrate real Poseidon hashing
+// import { initHasher } from "@lightprotocol/hasher.rs";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -113,11 +114,13 @@ function generateSecret(): string {
  * commitment = hash(secret)
  */
 async function computeCommitment(secret: string): Promise<string> {
-  // Initialize hasher.rs
-  await initHasher();
+  // TODO: Use Poseidon hash from hasher.rs when circuit files are ready
+  // await initHasher();
+  // const secretBigInt = BigInt("0x" + secret);
+  // const commitment = poseidonHash([secretBigInt]);
+  // return commitment.toString(16);
   
-  // In real implementation, use poseidon hash from hasher.rs
-  // For now, use SHA-256 as placeholder
+  // Placeholder: Use SHA-256 for now
   const encoder = new TextEncoder();
   const data = encoder.encode(secret);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
