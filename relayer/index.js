@@ -62,6 +62,13 @@ function authenticateRequest(req, res, next) {
 const RPC_URL = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
 const RELAYER_KEYPAIR_PATH = process.env.RELAYER_KEYPAIR_PATH || "./relayer.json";
 
+// ALT (Address Lookup Table) - SDK default may be outdated
+// Override with custom ALT or let SDK create new one
+if (!process.env.NEXT_PUBLIC_ALT_ADDRESS) {
+  console.log("⚠️  No ALT address set - SDK will use default or create new");
+  // For production, you may want to create and pin specific ALT
+}
+
 /* ─────────────────────────────────────
    SOLANA CONNECTION
 ───────────────────────────────────── */
@@ -91,6 +98,16 @@ try {
     owner: relayerKeypair
   });
   console.log("✅ Privacy Cash client initialized for relayer");
+  
+  // Try to fetch balance to verify SDK is ready
+  // This will trigger any initialization needed by SDK
+  try {
+    const privateBalance = await privacyCashClient.getPrivateBalance();
+    console.log(`💰 Current private balance: ${privateBalance} lamports`);
+  } catch (balanceErr) {
+    console.log("⚠️  Could not fetch initial balance (may be first use):", balanceErr.message);
+    // Don't exit - this is non-critical, user may not have balance yet
+  }
 } catch (err) {
   console.error("❌ Failed to initialize Privacy Cash client:", err);
   process.exit(1);
