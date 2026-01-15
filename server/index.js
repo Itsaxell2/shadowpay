@@ -69,6 +69,10 @@ import {
   initSupabase
 } from "./supabase.js";
 
+import {
+  getPrivateBalance
+} from "./privacyCashService.js";
+
 // NOTE: Privacy Cash imports removed
 // All ZK proof generation now handled by relayer service
 // Backend NEVER imports or calls depositSOL/withdrawSOL
@@ -468,11 +472,11 @@ app.get("/balance", async (req, res) => {
     
     res.json({
       success: true,
-      balance: balanceData.sol,
-      lamports: balanceData.lamports
+      balance: balanceData ? balanceData.sol : 0,
+      lamports: balanceData ? balanceData.lamports : 0
     });
   } catch (err) {
-    console.error("Failed to fetch balance:", err);
+    console.error("❌ Failed to fetch balance:", err.message);
     // Return 0 if Privacy Cash client not initialized or failed
     res.json({ success: true, balance: 0, lamports: 0 });
   }
