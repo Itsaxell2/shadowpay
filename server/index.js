@@ -103,6 +103,7 @@ const app = express();
 app.set("trust proxy", 1);
 
 app.use(cors(getCorsOptions()));
+app.options("*", cors(getCorsOptions())); // Handle preflight requests
 app.use(express.json({ limit: "1mb" }));
 app.use(globalLimiter);
 app.use(securityLogger);
