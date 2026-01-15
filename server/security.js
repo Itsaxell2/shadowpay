@@ -186,6 +186,12 @@ export const withdrawalLimiter = rateLimit({
  * Prevents XSS and injection attacks
  */
 export function sanitizeInput(req, res, next) {
+  // CRITICAL: Guard against null req/res
+  if (!req || !res || !next) {
+    console.error('❌ FATAL: sanitizeInput called with null parameters');
+    return;
+  }
+
   // Sanitize string values
   const sanitize = (obj) => {
     if (typeof obj === 'string') {
@@ -226,13 +232,19 @@ export function sanitizeInput(req, res, next) {
  * Never expose sensitive information in errors
  */
 export function errorHandler(err, req, res, next) {
+  // CRITICAL: Guard against null req/res
+  if (!req || !res) {
+    console.error('❌ FATAL: errorHandler called with null req/res');
+    return;
+  }
+
   // Log full error internally
   auditLogger.error('❌ Application error', {
     message: err.message,
     stack: err.stack,
-    url: req.originalUrl,
-    method: req.method,
-    ip: req.ip,
+    url: req.originalUrl || 'unknown',
+    method: req.method || 'unknown',
+    ip: req.ip || 'unknown',
     timestamp: new Date()
   });
 
@@ -251,14 +263,21 @@ export function errorHandler(err, req, res, next) {
  * Logs all requests with details
  */
 export function securityLogger(req, res, next) {
+  // CRITICAL: Guard against null req/res
+  if (!req || !res || !next) {
+    console.error('❌ FATAL: securityLogger called with null parameters');
+    console.error('req:', !!req, 'res:', !!res, 'next:', !!next);
+    return;
+  }
+
   const start = Date.now();
 
   // Log request
   auditLogger.info('📥 Incoming request', {
-    method: req.method,
-    path: req.path,
-    ip: req.ip,
-    userAgent: req.get('user-agent'),
+    method: req.method || 'unknown',
+    path: req.path || 'unknown',
+    ip: req.ip || 'unknown',
+    userAgent: req.get('user-agent') || 'unknown',
     timestamp: new Date()
   });
 
@@ -270,11 +289,11 @@ export function securityLogger(req, res, next) {
     // Log suspicious responses
     if (res.statusCode >= 400) {
       auditLogger.warn('⚠️ Error response', {
-        method: req.method,
-        path: req.path,
+        method: req.method || 'unknown',
+        path: req.path || 'unknown',
         statusCode: res.statusCode,
         duration,
-        ip: req.ip,
+        ip: req.ip || 'unknown',
         timestamp: new Date()
       });
     }

@@ -7,6 +7,22 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// GLOBAL ERROR HANDLERS - PREVENT CONTAINER CRASHES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("💥 UNHANDLED REJECTION:", reason);
+  console.error("Promise:", promise);
+  // DON'T EXIT - keep server running
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("💥 UNCAUGHT EXCEPTION:", error);
+  console.error("Stack:", error.stack);
+  // DON'T EXIT - keep server running
+});
+
 /**
  * ShadowPay Backend Server
  * 
@@ -529,6 +545,20 @@ app.post("/withdraw", async (req, res) => {
   } catch (err) {
     console.error("❌ [EMBEDDED RELAYER] Withdraw error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* ───────────────────── ERROR HANDLER (LAST MIDDLEWARE) ───────────────────── */
+
+// Catch-all error handler MUST be last
+app.use((err, req, res, next) => {
+  console.error("💥 EXPRESS ERROR HANDLER:", err);
+  
+  if (!res.headersSent) {
+    res.status(500).json({
+      error: "Internal server error",
+      message: err.message
+    });
   }
 });
 
