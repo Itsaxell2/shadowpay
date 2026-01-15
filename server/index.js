@@ -250,7 +250,7 @@ app.get("/links/:id", async (req, res) => {
 /* ───────────────────── PAY (DEPOSIT) ───────────────────── */
 
 app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
-  const { amount, token, payerWallet } = req.body;
+  const { amount, token, payerWallet, signedTransaction } = req.body;
   const map = await loadLinks();
   const link = map[req.params.id];
 
@@ -263,31 +263,43 @@ app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
     return res.status(400).json({ error: "Invalid amount" });
   }
 
+  if (!payerWallet) {
+    return res.status(400).json({ error: "Payer wallet required" });
+  }
+
+  if (!signedTransaction) {
+    return res.status(400).json({ 
+      error: "Signed transaction required - user must sign in frontend (privacy-preserving)" 
+    });
+  }
+
   try {
-    // ⚠️ ARCHITECTURE: ZK proof generation MOVED TO RELAYER
-    // Backend is NOW lightweight orchestrator only:
-    // - Validate request
-    // - Forward to relayer (which handles ZK)
-    // - Store result
-    // - NEVER generates proofs here
+    // ⚠️  CRITICAL PRIVACY ARCHITECTURE:
+    // 1. User SIGNS transaction in frontend (with their wallet)
+    // 2. Backend receives SIGNED transaction
+    // 3. Backend forwards to relayer
+    // 4. Relayer ONLY submits (does NOT sign, does NOT pay)
+    // 
+    // This ensures:
+    // - User = payer (not relayer)
+    // - Privacy preserved (relayer ≠ payer)
+    // - No wallet custody by backend/relayer
     
-    console.log(`💳 Initiating payment (forwarding to relayer for ZK proof)...`);
+    console.log(`💳 Processing privacy-preserving deposit...`);
     console.log(`   Amount: ${amount} SOL`);
     console.log(`   Payer: ${payerWallet}`);
     console.log(`   Link: ${link.id}`);
 
     const lamports = Math.floor(amount * 1000000000);
     
-    // ✅ CALL RELAYER - Relayer handles ALL ZK proof generation
-    // Backend NEVER imports or calls Privacy Cash deposit
-    // This prevents OOM in backend process
+    // ✅ CALL RELAYER - Relayer ONLY submits, does NOT sign
     const relayerUrl = RELAYER_URL;
     
     if (!relayerUrl) {
       throw new Error("RELAYER_URL not configured - backend cannot process payments");
     }
     
-    console.log(`📡 Forwarding to relayer: POST ${relayerUrl}/deposit`);
+    console.log(`📡 Forwarding signed tx to relayer: POST ${relayerUrl}/deposit`);
     
     // Create AbortController for timeout
     const controller = new AbortController();
@@ -297,10 +309,14 @@ app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
     try {
       relayerRes = await fetch(`${relayerUrl}/deposit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-relayer-auth": process.env.RELAYER_SECRET || ""
+        },
         body: JSON.stringify({
           lamports,
           payerWallet,
+          signedTransaction, // CRITICAL: User-signed tx, not relayer
           linkId: link.id
         }),
         signal: controller.signal
@@ -320,14 +336,20 @@ app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
       throw new Error("Relayer did not return transaction signature");
     }
 
+    if (!result.commitment) {
+      console.warn("⚠️  No commitment returned - using tx hash as fallback");
+    }
+
     // Store deposit transaction and commitment
     link.status = "paid";
-    link.commitment = result.commitment || result.tx;
+    link.commitment = result.commitment || result.tx; // Commitment is the privacy proof
     link.txHash = result.tx;
     link.payment_count += 1;
     link.paid_at = Date.now();
+    link.payer = payerWallet; // For reference only, NOT on-chain link
     
-    console.log(`✅ Payment processed via relayer: ${result.tx}`);
+    console.log(`✅ Privacy deposit processed: ${result.tx}`);
+    console.log(`🔐 Commitment: ${link.commitment}`);
 
     map[link.id] = link;
     await saveLinks(map);
