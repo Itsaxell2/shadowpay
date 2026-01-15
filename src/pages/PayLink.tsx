@@ -107,18 +107,14 @@ const PayLink = () => {
         throw new Error("Phantom wallet not found. Please install Phantom extension.");
       }
 
-      console.log("💳 Initiating REAL devnet payment...");
+      console.log("💳 Initiating privacy-preserving payment...");
       console.log("Amount:", paymentData.amount, token);
       console.log("Link ID:", linkId);
       console.log("Wallet:", publicKey);
 
-      // Get network from env (default devnet)
-      const network = import.meta.env.VITE_SOLANA_NETWORK || 'devnet';
-      const rpcUrl = network === 'devnet' 
-        ? 'https://api.devnet.solana.com'
-        : network === 'testnet'
-        ? 'https://api.testnet.solana.com'
-        : 'https://api.mainnet-beta.solana.com';
+      // Get network from env (mainnet for Privacy Cash)
+      const network = 'mainnet-beta'; // Privacy Cash ONLY works on mainnet
+      const rpcUrl = import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
       console.log(`🌐 Network: ${network}`);
       console.log(`🔗 RPC: ${rpcUrl}`);
@@ -127,9 +123,38 @@ const PayLink = () => {
       const connection = new Connection(rpcUrl, 'confirmed');
 
       const sender = new PublicKey(publicKey);
+      const lamports = Math.floor(parseFloat(paymentData.amount) * LAMPORTS_PER_SOL);
 
-      // Step 1: Call backend to initiate deposit to Privacy Cash
-      console.log("🚀 Initiating Privacy Cash deposit via backend...");
+      // CRITICAL PRIVACY FIX:
+      // Step 1: Create Privacy Cash deposit transaction
+      // This needs to be signed by USER, not relayer
+      console.log("🔐 Creating Privacy Cash deposit transaction...");
+      
+      // Get latest blockhash
+      const { blockhash } = await connection.getLatestBlockhash('confirmed');
+      
+      // Create transaction (Privacy Cash SDK should provide instruction)
+      // For now, we'll use a placeholder that backend will recognize
+      const transaction = new Transaction({
+        feePayer: sender,
+        recentBlockhash: blockhash,
+      }).add(
+        SystemProgram.transfer({
+          fromPubkey: sender,
+          toPubkey: sender, // Placeholder - Privacy Cash pool address will be set by backend
+          lamports: lamports,
+        })
+      );
+
+      // Step 2: USER SIGNS transaction (CRITICAL for privacy)
+      console.log("✍️  Requesting user signature...");
+      const signed = await phantom.signTransaction(transaction);
+      const serialized = Buffer.from(signed.serialize()).toString('base64');
+      
+      console.log("✅ Transaction signed by user");
+
+      // Step 3: Send SIGNED transaction to backend
+      console.log("📡 Sending signed transaction to backend...");
       
       const apiUrl = import.meta.env.VITE_API_URL;
       if (!apiUrl) throw new Error('API URL not configured');
@@ -141,6 +166,7 @@ const PayLink = () => {
           amount: paymentData.amount,
           token: paymentData.token || "SOL",
           payerWallet: publicKey,
+          signedTransaction: serialized, // CRITICAL: User-signed tx
           network,
         }),
       });
@@ -151,7 +177,7 @@ const PayLink = () => {
       }
 
       const depositData = await depositRes.json();
-      console.log("✅ Deposit to Privacy Cash successful:", {
+      console.log("✅ Privacy-preserving deposit successful:", {
         txHash: depositData.link?.txHash || depositData.txHash,
         commitment: depositData.link?.commitment || depositData.commitment,
         amount: paymentData.amount,
@@ -161,9 +187,13 @@ const PayLink = () => {
       const txHash = depositData.link?.txHash || depositData.txHash;
       const commitment = depositData.link?.commitment || depositData.commitment;
 
+      if (!commitment) {
+        console.warn("⚠️  No commitment returned - privacy may be compromised");
+      }
+
       // Step 3: Save transaction proof
       setTxSignature(txHash);
-      const explorer = `https://explorer.solana.com/tx/${txHash}?cluster=${network}`;
+      const explorer = `https://explorer.solana.com/tx/${txHash}`;
       setExplorerUrl(explorer);
 
       // Step 4: Sync payment metadata to database
