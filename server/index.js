@@ -250,7 +250,7 @@ app.get("/links/:id", async (req, res) => {
 /* ───────────────────── PAY (DEPOSIT) ───────────────────── */
 
 app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
-  const { amount, token, payerWallet } = req.body;
+  const { amount, token, payerWallet, signedTransaction } = req.body;
   const map = await loadLinks();
   const link = map[req.params.id];
 
@@ -267,27 +267,40 @@ app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
     return res.status(400).json({ error: "Payer wallet required" });
   }
 
+  // MODEL B REQUIREMENT: Client MUST sign deposit transaction
+  // Relayer MUST NEVER sign deposits (privacy violation)
+  if (!signedTransaction) {
+    return res.status(400).json({ 
+      error: "MODEL B: Signed transaction required. Client must sign deposit (not relayer)." 
+    });
+  }
+
   try {
-    // 🔄 RELAYER-SPONSORED MODE:
-    // Relayer pays for transaction (sponsored transaction)
-    // This is the ONLY mode Privacy Cash SDK supports for deposits
-    // payerWallet is metadata only (for tracking/UI)
+    // � MODEL B - TRUE NON-CUSTODIAL PRIVACY:
+    // 1. CLIENT signs deposit transaction (user wallet)
+    // 2. Backend receives SIGNED transaction from client
+    // 3. Relayer BROADCASTS transaction (does NOT sign)
+    // 4. Privacy preserved: client = signer, relayer = broadcaster only
+    //
+    // WHY: If relayer signs deposits, relayer knows deposit origin (privacy leak)
+    // SAME MODEL AS: Tornado Cash, Railgun, Aztec
     
-    console.log(`💳 Processing relayer-sponsored deposit...`);
+    console.log(`💳 Processing MODEL B deposit (client-signed)...`);
     console.log(`   Amount: ${amount} SOL`);
-    console.log(`   Payer (metadata): ${payerWallet}`);
+    console.log(`   Payer: ${payerWallet}`);
     console.log(`   Link: ${link.id}`);
+    console.log(`   Mode: Client-signed (NON-CUSTODIAL)`);
 
     const lamports = Math.floor(amount * 1000000000);
     
-    // ✅ CALL RELAYER - Relayer signs AND pays (sponsored tx)
+    // ✅ CALL RELAYER - Relayer ONLY broadcasts (does NOT sign)
     const relayerUrl = RELAYER_URL;
     
     if (!relayerUrl) {
       throw new Error("RELAYER_URL not configured - backend cannot process payments");
     }
     
-    console.log(`📡 Sending deposit request to relayer: POST ${relayerUrl}/deposit`);
+    console.log(`📡 Sending CLIENT-SIGNED tx to relayer for broadcast: POST ${relayerUrl}/deposit`);
     
     // Create AbortController for timeout
     const controller = new AbortController();
@@ -306,7 +319,9 @@ app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
         },
         body: JSON.stringify({
           lamports,
-          payerWallet // Metadata only - relayer is actual payer
+          payerWallet,
+          signedTransaction, // CLIENT-SIGNED (not relayer-signed)
+          mode: "client-signed" // Explicit mode flag
         }),
         signal: controller.signal
       });

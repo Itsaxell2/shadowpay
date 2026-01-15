@@ -101,25 +101,69 @@ const PayLink = () => {
     setPaymentState("processing");
 
     try {
-      console.log("💳 Initiating relayer-sponsored payment...");
+      // Get Phantom wallet
+      const phantom = (window as any).phantom?.solana;
+      if (!phantom) {
+        throw new Error("Phantom wallet not found. Please install Phantom extension.");
+      }
+
+      console.log("💳 MODEL B: Initiating client-signed deposit...");
       console.log("Amount:", paymentData.amount, token);
       console.log("Link ID:", linkId);
       console.log("Wallet:", publicKey);
 
       // Get network from env (mainnet for Privacy Cash)
       const network = 'mainnet-beta'; // Privacy Cash ONLY works on mainnet
+      const rpcUrl = import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
       console.log(`🌐 Network: ${network}`);
+      console.log(`🔗 RPC: ${rpcUrl}`);
 
-      // RELAYER-SPONSORED MODE:
-      // Relayer pays for transaction (Privacy Cash SDK only supports this)
-      // User wallet is metadata only (for UI/tracking)
+      // Create Solana connection
+      const connection = new Connection(rpcUrl, 'confirmed');
+      const sender = new PublicKey(publicKey);
+      const lamports = Math.floor(parseFloat(paymentData.amount) * LAMPORTS_PER_SOL);
+
+      // 🔒 MODEL B - STEP 1: CLIENT SIGNS DEPOSIT TRANSACTION
+      // WHY: If relayer signs, relayer knows deposit origin (privacy leak)
+      // SAME AS: Tornado Cash (user approves deposit, relayer only for withdraw)
+      
+      console.log("🔐 Step 1: Building Privacy Cash deposit transaction...");
+      
+      // TODO: Build proper Privacy Cash deposit instruction
+      // CURRENT LIMITATION: Privacy Cash SDK doesn't expose instruction builder
+      // REQUIRED:
+      // - Get Privacy Cash pool address
+      // - Build deposit instruction with commitment
+      // - Add to transaction
+      //
+      // FOR NOW: Placeholder transaction (will fail at relayer)
+      const { blockhash } = await connection.getLatestBlockhash('confirmed');
+      const transaction = new Transaction({
+        feePayer: sender,
+        recentBlockhash: blockhash,
+      }).add(
+        SystemProgram.transfer({
+          fromPubkey: sender,
+          toPubkey: sender, // TODO: Replace with Privacy Cash pool address
+          lamports: lamports,
+        })
+      );
+
+      // 🔒 MODEL B - STEP 2: USER SIGNS TRANSACTION (CRITICAL)
+      console.log("✍️  Step 2: Requesting user signature (MODEL B requirement)...");
+      const signed = await phantom.signTransaction(transaction);
+      const serialized = Buffer.from(signed.serialize()).toString('base64');
+      
+      console.log("✅ Transaction signed by CLIENT (not relayer)");
+      console.log("   This preserves deposit privacy ✅");
+
+      // 🔒 MODEL B - STEP 3: Send CLIENT-SIGNED transaction to backend
+      console.log("📡 Step 3: Sending CLIENT-SIGNED transaction to backend...");
       
       const apiUrl = import.meta.env.VITE_API_URL;
       if (!apiUrl) throw new Error('API URL not configured');
       const endpoint = `${apiUrl}/links/${linkId}/pay`;
-      
-      console.log("📡 Sending relayer-sponsored payment request...");
       
       const depositRes = await fetch(endpoint, {
         method: "POST",
@@ -127,21 +171,33 @@ const PayLink = () => {
         body: JSON.stringify({
           amount: paymentData.amount,
           token: paymentData.token || "SOL",
-          payerWallet: publicKey, // Metadata only
+          payerWallet: publicKey,
+          signedTransaction: serialized, // CLIENT-SIGNED (MODEL B)
           network,
         }),
       });
 
       if (!depositRes.ok) {
         const errorData = await depositRes.json();
-        throw new Error(errorData.error || `Deposit to Privacy Cash failed: ${depositRes.status}`);
+        
+        // Handle MODEL B not implemented error gracefully
+        if (depositRes.status === 501) {
+          throw new Error(
+            "Privacy mode not yet fully implemented.\n\n" +
+            "Privacy Cash SDK limitation: SDK doesn't expose instruction builder for client-signed deposits.\n\n" +
+            "Current status: Architecture ready, SDK integration pending."
+          );
+        }
+        
+        throw new Error(errorData.error || `Deposit failed: ${depositRes.status}`);
       }
 
       const depositData = await depositRes.json();
-      console.log("✅ Relayer-sponsored deposit successful:", {
+      console.log("✅ MODEL B deposit successful:", {
         txHash: depositData.link?.txHash || depositData.txHash,
         commitment: depositData.link?.commitment || depositData.commitment,
         amount: paymentData.amount,
+        mode: "client-signed (non-custodial)"
       });
 
       // Get transaction hash from backend response
