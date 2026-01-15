@@ -291,6 +291,6 @@ app.listen(PORT, () => {
   console.log(`🚀 Relayer running on port ${PORT}`);
   console.log(`🌐 Service URL: ${process.env.SERVICE_URL || `http://localhost:${PORT}`}`);
   console.log(`🔧 Environment: ${NODE_ENV}`);
-  console.log(`🔐 Auth required: ${RELAYER_SECRET ? 'Yes' : 'No (dev mode)'}`);
+  console.log(`🔐 Auth required: ${RELAYER_AUTH_SECRET ? 'Yes' : 'No (dev mode)'}`);
 });
 
