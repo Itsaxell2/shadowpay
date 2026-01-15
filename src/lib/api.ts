@@ -70,7 +70,9 @@ export async function fetchDashboardData(userId?: string): Promise<{ balance: nu
       .map((link: any) => ({
         ...link,
         linkId: link.linkId || link.id,  // Support both 'id' and 'linkId' fields
-        url: link.url || `/pay/${link.id || link.linkId}`
+        url: link.url || `/pay/${link.id || link.linkId}`,
+        uses: link.uses ?? link.payment_count ?? 0,  // Map payment_count to uses
+        createdAt: link.createdAt ?? link.created_at ?? Date.now(),  // Map created_at to createdAt
       }));
     
     return {
