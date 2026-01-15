@@ -27,3 +27,4 @@ dist-ssr
 .env
 .env.*
 relayer/.env
+relayer/cache/
