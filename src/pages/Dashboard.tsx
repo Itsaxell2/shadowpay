@@ -55,12 +55,20 @@ const Dashboard = () => {
 
   // Fetch dashboard data (balance & links) on mount
   useEffect(() => {
+    // Don't fetch if no publicKey (user not connected)
+    if (!publicKey) {
+      console.log('⏸️  Skipping dashboard fetch - wallet not connected');
+      setBalanceLoading(false);
+      setLinksLoading(false);
+      return;
+    }
+
     async function loadDashboard() {
       try {
         setBalanceLoading(true);
         setLinksLoading(true);
         console.log('Fetching dashboard data for user:', publicKey);
-        const { balance, links } = await fetchDashboardData(publicKey || undefined);
+        const { balance, links } = await fetchDashboardData(publicKey);
         console.log('Fetched data:', { balance, linksCount: links.length });
         setPrivateBalance(balance);
         setLinks(links);
@@ -77,9 +85,16 @@ const Dashboard = () => {
   }, [publicKey]);
 
   const handleRefreshBalance = async () => {
+    if (!publicKey) {
+      toast.error('Wallet Not Connected', {
+        description: 'Please connect your wallet first',
+      });
+      return;
+    }
+
     setRefreshing(true);
     try {
-      const { balance, links } = await fetchDashboardData(publicKey || undefined);
+      const { balance, links } = await fetchDashboardData(publicKey);
       setPrivateBalance(balance);
       setLinks(links);
       toast.success('Balance Updated', {
@@ -87,8 +102,9 @@ const Dashboard = () => {
       });
     } catch (error) {
       toast.error('Failed to refresh dashboard data');
+    } finally {
+      setRefreshing(false);
     }
-    setRefreshing(false);
   };
 
   const handleCopyLink = (url: string) => {
