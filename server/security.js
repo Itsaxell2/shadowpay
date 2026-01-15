@@ -53,16 +53,28 @@ if (process.env.NODE_ENV !== 'production') {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function getCorsOptions() {
-  const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',');
+  // Default to allowing localhost for development
+  // In production, allow the frontend domain
+  const defaultOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://shadowpay-seven.vercel.app',
+    'https://shadowpay.vercel.app'
+  ];
+  
+  const corsOrigins = (process.env.CORS_ORIGIN || defaultOrigins.join(',')).split(',');
   
   return {
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile, curl, etc)
       if (!origin) return callback(null, true);
       
-      const isAllowed = corsOrigins.some(allowed => 
-        origin.includes(allowed.trim())
-      );
+      // Allow if matches any allowed origin
+      const isAllowed = corsOrigins.some(allowed => {
+        const trimmed = allowed.trim();
+        // Exact match or subdomain match
+        return origin === trimmed || origin.endsWith('.' + trimmed);
+      });
       
       if (isAllowed) {
         return callback(null, true);
