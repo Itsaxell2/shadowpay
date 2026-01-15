@@ -87,24 +87,42 @@ initSupabase();
 if (process.env.PRIVATE_KEY) {
   try {
     const { Keypair } = await import("@solana/web3.js");
-    const bs58 = (await import("bs58")).default;
-    const keypair = Keypair.fromSecretKey(bs58.decode(process.env.PRIVATE_KEY));
+    const bs58Module = await import("bs58");
+    const bs58 = bs58Module.default || bs58Module;
+    
+    console.log('🔑 Decoding PRIVATE_KEY...');
+    const secretKey = bs58.decode(process.env.PRIVATE_KEY);
+    const keypair = Keypair.fromSecretKey(secretKey);
+    
+    console.log('🧾 Relayer public key:', keypair.publicKey.toBase58());
+    
     await initPrivacyCashClient({
       rpcUrl: process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com",
       keypair
     });
-    console.log("✅ Privacy Cash client initialized");
+    console.log("✅ Privacy Cash client initialized successfully");
   } catch (err) {
-    console.warn("⚠️ Privacy Cash client init failed:", err.message);
+    console.error("❌ Privacy Cash client init FAILED:", err.message);
+    console.error("Stack:", err.stack);
+    // DON'T exit - continue without Privacy Cash (payments will fail but server stays up)
   }
 }
 
 const app = express();
 app.set("trust proxy", 1);
 
-// CRITICAL: OPTIONS preflight MUST come before global cors middleware
-app.options("*", cors(getCorsOptions()));
-app.use(cors(getCorsOptions()));
+// CORS configuration - be permissive for now
+const corsOptions = {
+  origin: true, // Allow all origins temporarily for debugging
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-relayer-auth'],
+  exposedHeaders: ['Content-Type'],
+  maxAge: 86400 // 24 hours
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 app.use(globalLimiter);
 app.use(securityLogger);
@@ -130,8 +148,26 @@ async function saveLinks(map) {
 
 /* ─────────────────────── HEALTH ─────────────────────── */
 
-app.get("/health", (_, res) => {
-  res.json({ ok: true });
+app.get("/health", async (_, res) => {
+  const health = {
+    ok: true,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      memory: process.memoryUsage()
+    },
+    config: {
+      port: PORT,
+      hasPrivateKey: !!process.env.PRIVATE_KEY,
+      hasJwtSecret: !!process.env.JWT_SECRET,
+      rpcUrl: process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com",
+      supabaseEnabled: false // Temporarily disabled
+    }
+  };
+  
+  res.json(health);
 });
 
 /* ───────────────────── AUTH ───────────────────── */

@@ -6,6 +6,12 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 let supabase = null;
 
 export function initSupabase() {
+  // TEMPORARILY DISABLED - Schema mismatch causing production crashes
+  // Use file-based storage only for stability
+  console.warn("⚠️ Supabase DISABLED - using file-based storage only");
+  return null;
+  
+  /* DISABLED CODE:
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     console.warn(
       "⚠️ Supabase credentials not set. Using file-based storage (not persistent in Railway)."
@@ -19,6 +25,7 @@ export function initSupabase() {
   }
 
   return supabase;
+  */
 }
 
 /**
