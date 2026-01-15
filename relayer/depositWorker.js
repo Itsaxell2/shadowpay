@@ -15,67 +15,9 @@
  * - Worker thread = isolated V8 context = main thread tetap jalan
  */
 
-import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
-import { Connection, Keypair } from "@solana/web3.js";
+import { Worker } from "worker_threads";
+import { Keypair } from "@solana/web3.js";
 import { PrivacyCash } from "privacycash";
-
-if (!isMainThread) {
-  // ────────────────────────────────────
-  //  WORKER THREAD EXECUTION
-  // ────────────────────────────────────
-  (async () => {
-    try {
-      const { 
-        rpcUrl, 
-        relayerSecretKey, 
-        lamports, 
-        referrer 
-      } = workerData;
-
-      // Reconstruct keypair dari secret key
-      const relayerKeypair = Keypair.fromSecretKey(
-        Uint8Array.from(relayerSecretKey)
-      );
-
-      // Initialize Privacy Cash client di worker context
-      const privacyCashClient = new PrivacyCash({
-        RPC_url: rpcUrl,
-        owner: relayerKeypair
-      });
-
-      console.log(`⚙️  [WORKER] Starting ZK deposit: ${lamports} lamports`);
-      const startTime = Date.now();
-
-      // ⚠️  CRITICAL: ZK proof generation happens HERE
-      // This is CPU-heavy and will block THIS thread
-      // But main Express thread remains responsive
-      const result = await privacyCashClient.deposit({
-        lamports,
-        referrer: referrer || undefined
-      });
-
-      const duration = Date.now() - startTime;
-      console.log(`✅ [WORKER] ZK deposit complete in ${duration}ms`);
-
-      // Send result back to main thread
-      parentPort.postMessage({
-        success: true,
-        result,
-        duration
-      });
-
-    } catch (error) {
-      console.error("❌ [WORKER] ZK deposit failed:", error);
-      
-      // Send error back to main thread
-      parentPort.postMessage({
-        success: false,
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  })();
-}
 
 /**
  * Helper function untuk spawn worker dari main thread
@@ -92,8 +34,58 @@ export async function runDepositWorker(config) {
   return new Promise((resolve, reject) => {
     const timeout = config.timeout || 60000; // Default 60s
     
-    // Spawn worker thread
-    const worker = new Worker(new URL(import.meta.url), {
+    // Reconstruct keypair untuk dikirim ke worker
+    const relayerKeypair = Keypair.fromSecretKey(config.relayerSecretKey);
+
+    // Worker code as string (inline execution)
+    const workerCode = `
+      import { Keypair } from "@solana/web3.js";
+      import { PrivacyCash } from "privacycash";
+      import { parentPort, workerData } from "worker_threads";
+
+      (async () => {
+        try {
+          const { rpcUrl, relayerSecretKey, lamports, referrer } = workerData;
+          
+          const relayerKeypair = Keypair.fromSecretKey(
+            Uint8Array.from(relayerSecretKey)
+          );
+          
+          const privacyCashClient = new PrivacyCash({
+            RPC_url: rpcUrl,
+            owner: relayerKeypair
+          });
+          
+          console.log(\`⚙️  [WORKER] Starting ZK deposit: \${lamports} lamports\`);
+          const startTime = Date.now();
+          
+          const result = await privacyCashClient.deposit({
+            lamports,
+            referrer: referrer || undefined
+          });
+          
+          const duration = Date.now() - startTime;
+          console.log(\`✅ [WORKER] ZK deposit complete in \${duration}ms\`);
+          
+          parentPort.postMessage({
+            success: true,
+            result,
+            duration
+          });
+        } catch (error) {
+          console.error("❌ [WORKER] ZK deposit failed:", error);
+          parentPort.postMessage({
+            success: false,
+            error: error.message,
+            stack: error.stack
+          });
+        }
+      })();
+    `;
+    
+    // Spawn worker thread dengan eval (ESM compatible)
+    const worker = new Worker(workerCode, {
+      eval: true,
       workerData: {
         rpcUrl: config.rpcUrl,
         relayerSecretKey: Array.from(config.relayerSecretKey),

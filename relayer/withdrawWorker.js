@@ -15,72 +15,9 @@
  * - Without worker thread → freeze → 502 timeout
  */
 
-import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { Worker } from "worker_threads";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { PrivacyCash } from "privacycash";
-
-if (!isMainThread) {
-  // ────────────────────────────────────
-  //  WORKER THREAD EXECUTION
-  // ────────────────────────────────────
-  (async () => {
-    try {
-      const { 
-        rpcUrl, 
-        relayerSecretKey, 
-        lamports, 
-        recipientAddress,
-        referrer 
-      } = workerData;
-
-      // Reconstruct keypair dari secret key
-      const relayerKeypair = Keypair.fromSecretKey(
-        Uint8Array.from(relayerSecretKey)
-      );
-
-      // Initialize Privacy Cash client di worker context
-      const privacyCashClient = new PrivacyCash({
-        RPC_url: rpcUrl,
-        owner: relayerKeypair
-      });
-
-      console.log(`⚙️  [WORKER] Starting ZK withdraw: ${lamports} lamports to ${recipientAddress}`);
-      const startTime = Date.now();
-
-      // ⚠️  CRITICAL: ZK proof generation happens HERE
-      // This is HEAVY CPU computation:
-      // 1. Generate ZK proof of commitment knowledge
-      // 2. Prove commitment exists in Merkle tree
-      // 3. Create nullifier to prevent double-spend
-      // This can take 3-10 seconds depending on circuit complexity
-      const result = await privacyCashClient.withdraw({
-        lamports,
-        recipientAddress,
-        referrer: referrer || undefined
-      });
-
-      const duration = Date.now() - startTime;
-      console.log(`✅ [WORKER] ZK withdraw complete in ${duration}ms`);
-
-      // Send result back to main thread
-      parentPort.postMessage({
-        success: true,
-        result,
-        duration
-      });
-
-    } catch (error) {
-      console.error("❌ [WORKER] ZK withdraw failed:", error);
-      
-      // Send error back to main thread
-      parentPort.postMessage({
-        success: false,
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  })();
-}
 
 /**
  * Helper function untuk spawn worker dari main thread
@@ -98,8 +35,56 @@ export async function runWithdrawWorker(config) {
   return new Promise((resolve, reject) => {
     const timeout = config.timeout || 120000; // Default 120s (ZK proof lebih lama)
     
-    // Spawn worker thread
-    const worker = new Worker(new URL(import.meta.url), {
+    // Worker code as string (inline execution)
+    const workerCode = `
+      import { Keypair, PublicKey } from "@solana/web3.js";
+      import { PrivacyCash } from "privacycash";
+      import { parentPort, workerData } from "worker_threads";
+
+      (async () => {
+        try {
+          const { rpcUrl, relayerSecretKey, lamports, recipientAddress, referrer } = workerData;
+          
+          const relayerKeypair = Keypair.fromSecretKey(
+            Uint8Array.from(relayerSecretKey)
+          );
+          
+          const privacyCashClient = new PrivacyCash({
+            RPC_url: rpcUrl,
+            owner: relayerKeypair
+          });
+          
+          console.log(\`⚙️  [WORKER] Starting ZK withdraw: \${lamports} lamports to \${recipientAddress}\`);
+          const startTime = Date.now();
+          
+          const result = await privacyCashClient.withdraw({
+            lamports,
+            recipientAddress,
+            referrer: referrer || undefined
+          });
+          
+          const duration = Date.now() - startTime;
+          console.log(\`✅ [WORKER] ZK withdraw complete in \${duration}ms\`);
+          
+          parentPort.postMessage({
+            success: true,
+            result,
+            duration
+          });
+        } catch (error) {
+          console.error("❌ [WORKER] ZK withdraw failed:", error);
+          parentPort.postMessage({
+            success: false,
+            error: error.message,
+            stack: error.stack
+          });
+        }
+      })();
+    `;
+    
+    // Spawn worker thread dengan eval (ESM compatible)
+    const worker = new Worker(workerCode, {
+      eval: true,
       workerData: {
         rpcUrl: config.rpcUrl,
         relayerSecretKey: Array.from(config.relayerSecretKey),
