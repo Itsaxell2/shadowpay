@@ -84,8 +84,9 @@ export async function saveLinksToSupabase(linksMap) {
 
   try {
     const linksArray = Object.values(linksMap).map(link => {
-      // Only save fields that exist in Supabase schema
-      const { id, amount, recipientWallet, creator_id, status, commitment, txHash, paid_at, withdrawn_at, payment_count, withdraw_tx } = link;
+      // Only save fields that DEFINITELY exist in Supabase schema
+      // Exclude: paid_at, expiresAt, withdraw_tx, payment_count, etc
+      const { id, amount, recipientWallet, creator_id, status, commitment, txHash } = link;
       return {
         id,
         amount,
@@ -93,16 +94,12 @@ export async function saveLinksToSupabase(linksMap) {
         creator_id,
         status,
         commitment,
-        txHash,
-        paid_at,
-        withdrawn_at,
-        payment_count,
-        withdraw_tx
+        txHash
       };
     });
     
     if (linksArray.length === 0) {
-      return true; // Nothing to save
+      return true;
     }
 
     const { error } = await client
@@ -111,6 +108,7 @@ export async function saveLinksToSupabase(linksMap) {
 
     if (error) {
       console.error("Supabase saveLinks error:", error);
+      // Don't throw - silently fail and use file-based storage
       return false;
     }
 

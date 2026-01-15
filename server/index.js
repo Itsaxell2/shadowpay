@@ -102,8 +102,9 @@ if (process.env.PRIVATE_KEY) {
 const app = express();
 app.set("trust proxy", 1);
 
+// CRITICAL: OPTIONS preflight MUST come before global cors middleware
+app.options("*", cors(getCorsOptions()));
 app.use(cors(getCorsOptions()));
-app.options("*", cors(getCorsOptions())); // Handle preflight requests
 app.use(express.json({ limit: "1mb" }));
 app.use(globalLimiter);
 app.use(securityLogger);
