@@ -15,6 +15,7 @@ import {
   SystemProgram,
   LAMPORTS_PER_SOL 
 } from "@solana/web3.js";
+import { depositSOL, EncryptionService } from "@/lib/privacyCashDeposit";
 
 const PayLink = () => {
   const { connected, publicKey, connect } = useWallet();
@@ -22,6 +23,7 @@ const PayLink = () => {
   const [error, setError] = useState<string | null>(null);
   const [txSignature, setTxSignature] = useState<string | null>(null);
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
+  const [encryptionService] = useState(() => new EncryptionService());
   
   const [paymentData, setPaymentData] = useState<{ amount?: string; token?: string } | null>({
     amount: undefined,
@@ -107,7 +109,7 @@ const PayLink = () => {
         throw new Error("Phantom wallet not found. Please install Phantom extension.");
       }
 
-      console.log("💳 MODEL B: Client-side deposit (Privacy Cash SDK)...");
+      console.log("💳 MODEL B: Client-side deposit (Privacy Cash)...");
       console.log("Amount:", paymentData.amount, token);
       console.log("Link ID:", linkId);
       console.log("Wallet:", publicKey);
@@ -124,74 +126,75 @@ const PayLink = () => {
       const sender = new PublicKey(publicKey);
       const lamports = Math.floor(parseFloat(paymentData.amount) * LAMPORTS_PER_SOL);
 
-      // 🔒 MODEL B - CLIENT-SIDE DEPOSIT (Privacy Cash SDK)
-      // 1. Initialize Privacy Cash client in browser
-      // 2. Build deposit transaction with commitment
-      // 3. User signs transaction
-      // 4. Submit directly to RPC (not through relayer)
-      // 5. Send metadata to backend
+      // 🔒 MODEL B - CLIENT-SIDE DEPOSIT
+      // STEP 1: Wallet signature for encryption key
+      console.log("🔐 Step 1: Getting wallet signature for encryption key...");
       
-      console.log("🔐 Step 1: Initializing Privacy Cash client (browser)...");
+      const message = new TextEncoder().encode("Privacy Money account sign in");
+      const signatureResult = await phantom.signMessage(message, "utf8");
+      const signature = signatureResult.signature;
       
-      // TODO: Import Privacy Cash WASM/client SDK
-      // Example (pseudo-code based on typical privacy pool SDKs):
-      // import { PrivacyCashClient } from '@privacycash/sdk';
-      // 
-      // const privacyClient = await PrivacyCashClient.initialize({
-      //   rpcUrl,
-      //   wallet: phantom
-      // });
-      //
-      // const { transaction, commitment, encryptedOutputs } = await privacyClient.buildDeposit({
-      //   amount: lamports
-      // });
-      //
-      // // User signs
-      // const signed = await phantom.signTransaction(transaction);
-      // 
-      // // Submit to RPC directly
-      // const txHash = await connection.sendRawTransaction(signed.serialize());
-      // await connection.confirmTransaction(txHash);
+      console.log("✅ Wallet signature obtained");
       
-      console.log("⚠️  Privacy Cash browser SDK not yet imported");
-      console.log("⚠️  Need to add: npm install @privacycash/sdk (or WASM module)");
+      // Derive encryption key from signature
+      await encryptionService.deriveEncryptionKeyFromSignature(signature);
       
-      // FOR NOW: Return clear error explaining what's needed
-      throw new Error(
-        "Privacy Cash client SDK not integrated yet.\n\n" +
-        "REQUIRED: Import Privacy Cash browser SDK/WASM\n" +
-        "Expected flow:\n" +
-        "1. PrivacyCashClient.buildDeposit(lamports)\n" +
-        "2. User signs transaction\n" +
-        "3. Submit to RPC directly\n" +
-        "4. Extract commitment + tx hash\n" +
-        "5. Send metadata to backend\n\n" +
-        "Architecture is correct, SDK import pending."
-      );
-      
-      // Once SDK is imported, code would be:
-      // const apiUrl = import.meta.env.VITE_API_URL;
-      // await fetch(`${apiUrl}/links/${linkId}/pay`, {
-      //   method: "POST",
-      //   body: JSON.stringify({
-      //     tx: txHash,
-      //     commitment: commitment,
-      //     amount: paymentData.amount,
-      //     linkId: linkId
-      //   })
-      // });
+      console.log("✅ Encryption key derived");
 
-      // Placeholder: Return error until SDK is imported
-      // These variables would be set after actual SDK integration:
-      // const txHash = result.txHash;
-      // const commitment = result.commitment;
+      // STEP 2: Client-side deposit with ZK proof
+      console.log("🔐 Step 2: Generating ZK proof and deposit transaction...");
+      
+      const depositResult = await depositSOL({
+        amountLamports: lamports,
+        connection,
+        publicKey: sender,
+        signTransaction: async (tx: Transaction) => {
+          const signed = await phantom.signTransaction(tx);
+          return signed;
+        },
+        encryptionService
+      });
+
+      console.log("✅ Deposit successful!");
+      console.log("   TX:", depositResult.txSignature);
+      console.log("   Commitment:", depositResult.commitment);
+
+      setTxSignature(depositResult.txSignature);
+      setExplorerUrl(`https://explorer.solana.com/tx/${depositResult.txSignature}?cluster=${network}`);
+
+      // STEP 3: Send metadata to backend (optional)
+      console.log("📡 Step 3: Sending metadata to backend...");
+      
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (apiUrl && linkId) {
+        try {
+          await fetch(`${apiUrl}/links/${linkId}/pay`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tx: depositResult.txSignature,
+              commitment: depositResult.commitment,
+              amount: paymentData.amount,
+              linkId: linkId
+            })
+          });
+          console.log("✅ Metadata sent to backend");
+        } catch (metadataErr) {
+          console.warn("⚠️  Failed to send metadata to backend (non-critical):", metadataErr);
+        }
+      }
+
+      setPaymentState("success");
+      
+      toast.success('Payment Successful! 🎉', {
+        description: 'Your private payment has been processed.',
+      });
       
     } catch (error: any) {
       const message = error instanceof Error ? error.message : "Payment failed";
       console.error("❌ Payment error:", message);
       setError(message);
       
-      // Show error toast
       toast.error('Payment Failed', {
         description: message,
       });
