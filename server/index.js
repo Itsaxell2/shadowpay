@@ -90,7 +90,7 @@ if (process.env.PRIVATE_KEY) {
     const bs58 = (await import("bs58")).default;
     const keypair = Keypair.fromSecretKey(bs58.decode(process.env.PRIVATE_KEY));
     await initPrivacyCashClient({
-      rpcUrl: process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com",
+      rpcUrl: process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com",
       keypair
     });
     console.log("✅ Privacy Cash client initialized");
