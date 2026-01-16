@@ -6,6 +6,8 @@
     "@solana/web3.js": "^1.95.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "privacycash": "file:../privacy-cash-sdk"
+    "privacycash": "^1.1.10",
+    "@lightprotocol/hasher.rs": "^0.2.1",
+    "node-localstorage": "^3.0.5"
   }
 }
