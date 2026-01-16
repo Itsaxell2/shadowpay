@@ -126,14 +126,16 @@ export class EncryptionService {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Load witness calculator from JavaScript file
+ * Load witness calculator builder from JavaScript file
+ * Returns the builder function that creates WitnessCalculator instances
  */
-async function loadWitnessCalculator(): Promise<WitnessCalculator> {
-  console.log("📦 Loading witness calculator...");
+async function loadWitnessCalculatorBuilder(): Promise<any> {
+  console.log("📦 Loading witness calculator builder...");
   
   try {
     // Check if already loaded
     if (window.witnessCalculator) {
+      console.log("✅ Witness calculator builder already loaded");
       return window.witnessCalculator;
     }
 
@@ -150,7 +152,7 @@ async function loadWitnessCalculator(): Promise<WitnessCalculator> {
       throw new Error('Witness calculator not available after loading');
     }
 
-    console.log("✅ Witness calculator loaded");
+    console.log("✅ Witness calculator builder loaded");
     return window.witnessCalculator;
   } catch (error) {
     console.error("❌ Failed to load witness calculator:", error);
@@ -259,11 +261,19 @@ async function generateDepositProof(
   
   try {
     // Load circuit components
-    const [witnessCalc, wasmBuffer, zkeyBuffer] = await Promise.all([
-      loadWitnessCalculator(),
+    const [witnessBuilder, wasmBuffer, zkeyBuffer] = await Promise.all([
+      loadWitnessCalculatorBuilder(),
       loadCircuitWasm(),
       loadProvingKey()
     ]);
+
+    console.log("🔐 Creating WitnessCalculator instance...");
+    // CRITICAL: witnessBuilder is a function that takes WASM buffer
+    // It returns a WitnessCalculator instance with calculateWitness method
+    const witnessCalc = await witnessBuilder(wasmBuffer);
+    
+    // Debug: Verify instance has correct methods
+    console.log('✅ WC instance created, methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(witnessCalc)));
 
     // Prepare circuit inputs
     const circuitInputs = {
@@ -273,7 +283,7 @@ async function generateDepositProof(
     };
 
     console.log("🔐 Calculating witness...");
-    const witness = await witnessCalc.calculateWitness(circuitInputs, true);
+    const witness = await witnessCalc.calculateWitness(circuitInputs, false);
 
     console.log("🔐 Generating Groth16 proof...");
     // In real implementation, use snarkjs or wasm-based proof generation
