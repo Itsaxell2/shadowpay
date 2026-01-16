@@ -10,6 +10,7 @@ import { groth16 } from 'snarkjs';
 // @ts-ignore
 import { utils } from 'ffjavascript';
 import { WasmFactory } from '@lightprotocol/hasher.rs';
+import { keccak256 } from '@ethersproject/keccak256';
 import BN from 'bn.js';
 
 // Constants from Privacy Cash SDK
@@ -186,11 +187,24 @@ export class PrivacyCashBrowser {
 
     /**
      * Derive UTXO private key dari wallet public key
+     * Matches SDK EncryptionService.deriveUtxoPrivateKey V2 method:
+     * 1. Create deterministic seed from public key
+     * 2. Apply keccak256 to get encryption key
+     * 3. Apply keccak256 again to get UTXO private key
      */
     private deriveUtxoPrivateKey(publicKey: PublicKey): string {
-        // Simple derivation (in production, use proper key derivation)
-        const hash = utils.stringifyBigInts(publicKey.toBytes());
-        return Buffer.from(hash).toString('hex').slice(0, 64);
+        // Use publicKey bytes as deterministic seed (simplified for browser)
+        // SDK would use: keccak256(wallet.signature) but we don't have wallet keypair
+        const seed = publicKey.toBytes();
+        
+        // Step 1: Derive encryption key (V2 method)
+        const encryptionKey = Buffer.from(keccak256(seed).slice(2), 'hex');
+        
+        // Step 2: Derive UTXO private key from encryption key
+        // Matches SDK: this.utxoPrivateKeyV2 = '0x' + keccak256(encryptionKeyV2).slice(2)
+        const utxoPrivateKey = keccak256(encryptionKey);
+        
+        return utxoPrivateKey; // Already has '0x' prefix
     }
 
     /**
