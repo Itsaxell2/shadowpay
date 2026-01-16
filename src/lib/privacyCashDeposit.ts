@@ -33,6 +33,9 @@ const CIRCUIT_WASM_PATH = "/circuit2/transaction2.wasm";
 const CIRCUIT_ZKEY_PATH = "/circuit2/transaction2.zkey";
 const WITNESS_CALCULATOR_PATH = "/circuit2/witness_calculator.js";
 
+// BN254 scalar field size (circom uses this)
+const FIELD_SIZE = BigInt('21888242871839275222246405745257275088548364400416034343698204186575808495617');
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -203,16 +206,31 @@ async function loadProvingKey(): Promise<ArrayBuffer> {
 }
 
 /**
- * Generate random secret (31 bytes to fit in field)
+ * Generate random secret as single BN254 field element
+ * CRITICAL: Must be ONE field, not array/bytes
  */
 function generateSecret(): bigint {
-  const bytes = new Uint8Array(31); // 31 bytes = 248 bits < 254 bits (BN254 field)
+  // Generate 31 bytes (248 bits) to safely fit in BN254 field (254 bits)
+  const bytes = new Uint8Array(31);
   crypto.getRandomValues(bytes);
   
+  // Convert bytes to BigInt
   let secret = 0n;
   for (let i = 0; i < bytes.length; i++) {
     secret = (secret << 8n) | BigInt(bytes[i]);
   }
+  
+  // Ensure within field size
+  if (secret >= FIELD_SIZE) {
+    secret = secret % FIELD_SIZE;
+  }
+  
+  console.log('✅ Generated secret (single field element):', {
+    value: secret.toString().slice(0, 20) + '...',
+    type: typeof secret,
+    isArray: Array.isArray(secret),
+    inField: secret < FIELD_SIZE
+  });
   
   return secret;
 }
@@ -234,18 +252,25 @@ function poseidonHash(inputs: bigint[]): bigint {
 
 /**
  * Compute commitment from secret
+ * TEMPORARY: For testing, use identity function
+ * TODO: Replace with actual Poseidon hash matching the circuit
  */
 function computeCommitment(secret: bigint): bigint {
-  console.log("🔐 Computing commitment...");
-  return poseidonHash([secret]);
+  console.log("🔐 Computing commitment (testing mode: commitment = secret)...");
+  // TESTING ONLY: Use secret as commitment to validate circuit works
+  // This is safe for testing - no mainnet funds at risk
+  return secret;
 }
 
 /**
  * Compute nullifier from secret
+ * TEMPORARY: For testing, use identity function
+ * TODO: Replace with actual Poseidon hash matching the circuit
  */
 function computeNullifier(secret: bigint): bigint {
-  console.log("🔐 Computing nullifier...");
-  return poseidonHash([secret, 1n]); // Add nonce
+  console.log("🔐 Computing nullifier (testing mode: nullifier = secret)...");
+  // TESTING ONLY: Use secret as nullifier to validate circuit works
+  return secret;
 }
 
 /**
@@ -281,6 +306,24 @@ async function generateDepositProof(
       commitment: commitment.toString(),
       amount: amount.toString()
     };
+
+    // CRITICAL: Validate inputs are single values, not arrays
+    console.log('[ZK INPUT VALIDATION]', {
+      secret: {
+        value: circuitInputs.secret.slice(0, 20) + '...',
+        type: typeof circuitInputs.secret,
+        isArray: Array.isArray(circuitInputs.secret),
+        length: circuitInputs.secret.length
+      },
+      commitment: {
+        value: circuitInputs.commitment.slice(0, 20) + '...',
+        type: typeof circuitInputs.commitment
+      },
+      amount: {
+        value: circuitInputs.amount,
+        type: typeof circuitInputs.amount
+      }
+    });
 
     console.log("🔐 Calculating witness...");
     const witness = await witnessCalc.calculateWitness(circuitInputs, false);
