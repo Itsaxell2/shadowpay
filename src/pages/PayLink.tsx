@@ -108,96 +108,65 @@ const PayLink = () => {
     setPaymentState("processing");
 
     try {
-      console.log("💰 Starting Privacy Cash deposit...");
+      console.log("💰 Starting Privacy Cash deposit (Browser SDK)...");
       console.log("   Amount:", paymentData.amount, token);
       console.log("   Link ID:", linkId);
       console.log("   Wallet:", publicKey);
-      console.log("   Architecture: Browser SDK → User Signs → Direct Blockchain");
+      console.log("   ✅ CORRECT: Using PrivacyCash class PUBLIC API");
 
       const amount = parseFloat(paymentData.amount);
       const amountLamports = Math.floor(amount * 1_000_000_000);
 
-      // HYBRID APPROACH: Backend builds TX, User signs
-      console.log("\n📤 Step 1: Request transaction from backend...");
-      console.log("   Backend will use Privacy Cash SDK (Node.js)");
-      console.log("   Backend builds TX with YOUR wallet as fee payer");
+      // ✅ CORRECT: Import Privacy Cash SDK PUBLIC API
+      console.log("\n📦 Step 1: Initialize Privacy Cash SDK...");
+      const { PrivacyCash } = await import('privacycash');
       
-      const apiUrl = import.meta.env.VITE_API_URL;
-      if (!apiUrl) {
-        throw new Error('API URL not configured');
-      }
-
-      // Request backend to build Privacy Cash transaction
-      const buildResponse = await fetch(`${apiUrl}/api/privacy/build-deposit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amountLamports,
-          userPublicKey: publicKey,
-          linkId,
-        }),
-      });
-
-      if (!buildResponse.ok) {
-        const error = await buildResponse.json();
-        throw new Error(error.message || 'Failed to build transaction');
-      }
-
-      const { transaction: txBase64 } = await buildResponse.json();
-      
-      console.log("\n🔐 Step 2: Sign transaction with Phantom...");
-      console.log("   Phantom popup will appear now");
-      console.log("   You are signing as fee payer and UTXO owner");
-      
-      // Get Phantom
+      // Get Phantom wallet adapter
       const phantom = (window as any).phantom?.solana;
       if (!phantom) {
         throw new Error("Phantom wallet not found");
       }
 
-      // Import Solana web3 - Privacy Cash uses VersionedTransaction
-      const { VersionedTransaction, Connection } = await import('@solana/web3.js');
+      // Initialize SDK with Phantom wallet adapter
+      const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=c455719c-354b-4a44-98d4-27f8a18aa79c';
       
-      // Deserialize VersionedTransaction from base64
-      const txBytes = Buffer.from(txBase64, 'base64');
-      const tx = VersionedTransaction.deserialize(txBytes);
-      
-      console.log("   Transaction deserialized (VersionedTransaction)");
-      console.log("   Fee payer:", tx.message.staticAccountKeys[0].toString());
-      
-      // User signs with Phantom
-      const signedTx = await phantom.signTransaction(tx);
-      
-      console.log("✅ Transaction signed by user");
-      console.log("\n📡 Step 3: Submit signed transaction to blockchain...");
-      
-      // Submit to Solana
-      const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://api.mainnet-beta.solana.com';
-      const connection = new Connection(rpcUrl, 'confirmed');
-      const signature = await connection.sendRawTransaction(signedTx.serialize());
-      
-      console.log("✅ Transaction submitted:", signature);
-      console.log("   Waiting for confirmation...");
-      
-      // Wait for confirmation
-      await connection.confirmTransaction(signature, 'confirmed');
-      
-      const depositResult = { txSignature: signature };
+      console.log("   Creating PrivacyCash instance with Phantom adapter...");
+      const privacyCash = new PrivacyCash({
+        RPC_url: rpcUrl,
+        owner: phantom, // Phantom wallet adapter
+        enableDebug: false
+      });
 
-      console.log("\n🎉 Payment successful!");
-      console.log("   ✅ TX:", depositResult.txSignature);
+      console.log("✅ SDK initialized");
+      console.log("\n🔐 Step 2: Generate ZK proof and deposit...");
+      console.log("   This will take 10-30 seconds");
+      console.log("   SDK will:");
+      console.log("   - Generate commitment & nullifier");
+      console.log("   - Create ZK circuit proof");
+      console.log("   - Build transaction");
+      console.log("   - Request Phantom signature");
+      console.log("   - Submit to Solana");
+
+      // ✅ CORRECT: Call PUBLIC deposit() method
+      const result = await privacyCash.deposit({
+        lamports: amountLamports
+      });
+
+      console.log("\n🎉 Deposit successful!");
+      console.log("   TX:", result.tx);
       console.log("   ✅ Privacy preserved via ZK proof");
+      console.log("   ✅ UTXO owned by your wallet");
       console.log("   ✅ Recipient identity hidden");
 
       const network = 'mainnet-beta';
-      setTxSignature(depositResult.txSignature);
-      setExplorerUrl(`https://explorer.solana.com/tx/${depositResult.txSignature}?cluster=${network}`);
+      setTxSignature(result.tx);
+      setExplorerUrl(`https://explorer.solana.com/tx/${result.tx}?cluster=${network}`);
       
       // Success - update state
       setPaymentState("success");
       
       toast.success('Payment Successful!', {
-        description: `Transaction: ${depositResult.txSignature.substring(0, 8)}...`,
+        description: `Transaction: ${result.tx.substring(0, 8)}...`,
       });
       
     } catch (error: any) {
