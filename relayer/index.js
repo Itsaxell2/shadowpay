@@ -82,8 +82,7 @@ const relayerKeypair = Keypair.fromSecretKey(Uint8Array.from(secret));
 
 console.log("🧾 Relayer:", relayerKeypair.publicKey.toBase58());
 
-// Check relayer SOL balance
-const connection = new Connection(RPC_URL, 'confirmed');
+// Check relayer SOL balance (using existing connection)
 const relayerBalance = await connection.getBalance(relayerKeypair.publicKey);
 console.log(`💰 Relayer SOL balance: ${relayerBalance / LAMPORTS_PER_SOL} SOL`);
 
