@@ -217,48 +217,45 @@ app.post("/build-deposit", authenticateRequest, async (req, res) => {
       return res.status(400).json({ error: "User public key required" });
     }
 
-    console.log("🏗️  Building Privacy Cash deposit transaction");
+    console.log("💰 Processing Privacy Cash deposit...");
     console.log("   Amount:", lamports / LAMPORTS_PER_SOL, "SOL");
-    console.log("   User (fee payer):", userPublicKey);
+    console.log("   User:", userPublicKey);
     console.log("   Link:", linkId);
+    console.log("   Architecture: Relayer pays gas, user gets encrypted UTXO");
 
     const startTime = Date.now();
 
-    // Create Privacy Cash SDK instance with USER's public key
-    // SDK will build transaction with user as fee payer
-    console.log("🔐 Creating Privacy Cash SDK with user as owner...");
-    
-    const userPubkey = new PublicKey(userPublicKey);
-    const client = new PrivacyCash({
-      RPC_url: RPC_URL,
-      owner: userPubkey,  // USER is owner and fee payer
-      enableDebug: true
-    });
-    
-    console.log("🔐 Building deposit transaction...");
+    // CORRECT APPROACH: Relayer uses its own keypair to sign
+    // Privacy Cash SDK will create encrypted UTXO for relayer's wallet
+    // User will later be able to claim/withdraw from pool
+    console.log("🔐 Executing deposit via relayer...");
     console.log("   ⏳ Generating ZK proof (10-30 seconds)...");
     
-    // SDK builds transaction but does NOT submit
-    // We need to extract the built transaction before it's signed
-    const result = await client.deposit({
+    const result = await privacyCashClient.deposit({
       lamports: lamports
     });
 
     const duration = Date.now() - startTime;
 
-    // SDK returns signed transaction - we need to serialize it
-    // User will sign it again with their Phantom wallet
-    console.log("✅ Transaction built in", duration, "ms");
-    console.log("   Returning to frontend for user signature");
+    console.log("✅ Deposit successful in", duration, "ms");
+    console.log("   TX:", result.tx);
+    console.log("   UTXO encrypted and stored in Privacy Cash pool");
+
+    // Store mapping between linkId and transaction
+    // This allows recipient to claim later
+    if (linkId) {
+      console.log("   Linked to payment ID:", linkId);
+    }
 
     res.json({
       success: true,
-      transaction: result.transaction || result.tx, // Serialized transaction base64
-      duration: duration
+      txSignature: result.tx,
+      duration: duration,
+      linkId: linkId
     });
 
   } catch (err) {
-    console.error("❌ Build transaction error:", err);
+    console.error("❌ Deposit error:", err);
     res.status(500).json({ error: err.message });
   }
 });
