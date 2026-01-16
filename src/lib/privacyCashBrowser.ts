@@ -268,29 +268,63 @@ export class PrivacyCashBrowser {
             index: nextIndex + 1
         };
         
-        // Calculate nullifiers (hash of privkey + blinding)
-        const inputNullifier0 = lightWasm.poseidon([
-            BigInt(input0.privkey),
-            BigInt(input0.blinding.toString())
+        // Derive public key from private key
+        const pubkey = new BN(lightWasm.poseidonHashString([new BN(utxoPrivateKey.slice(2), 16).toString()]));
+        
+        // Mint address field for SOL (native mint)
+        const mintAddressField = '0'; // Default for native SOL
+        
+        // Calculate input commitments first (dummy inputs with amount=0)
+        const inputCommitment0 = lightWasm.poseidonHashString([
+            input0.amount.toString(),
+            pubkey.toString(),
+            input0.blinding.toString(),
+            mintAddressField
         ]);
-        const inputNullifier1 = lightWasm.poseidon([
-            BigInt(input1.privkey),
-            BigInt(input1.blinding.toString())
+        const inputCommitment1 = lightWasm.poseidonHashString([
+            input1.amount.toString(),
+            pubkey.toString(),
+            input1.blinding.toString(),
+            mintAddressField
         ]);
         
-        // Derive public key from private key (simplified)
-        const pubkey = lightWasm.poseidon([BigInt(utxoPrivateKey)]);
-        
-        // Calculate output commitments (hash of amount + pubkey + blinding)
-        const outputCommitment0 = lightWasm.poseidon([
-            BigInt(output0.amount.toString()),
-            pubkey,
-            BigInt(output0.blinding.toString())
+        // Calculate signatures for nullifiers (sign commitment with privkey + index)
+        const privkeyBN = new BN(utxoPrivateKey.slice(2), 16);
+        const signature0 = lightWasm.poseidonHashString([
+            privkeyBN.toString(),
+            inputCommitment0,
+            '0' // index 0 for dummy input
         ]);
-        const outputCommitment1 = lightWasm.poseidon([
-            BigInt(output1.amount.toString()),
-            pubkey,
-            BigInt(output1.blinding.toString())
+        const signature1 = lightWasm.poseidonHashString([
+            privkeyBN.toString(),
+            inputCommitment1,
+            '0' // index 0 for dummy input
+        ]);
+        
+        // Calculate nullifiers (hash of commitment + index + signature)
+        const inputNullifier0 = lightWasm.poseidonHashString([
+            inputCommitment0,
+            '0', // index 0
+            signature0
+        ]);
+        const inputNullifier1 = lightWasm.poseidonHashString([
+            inputCommitment1,
+            '0', // index 0
+            signature1
+        ]);
+        
+        // Calculate output commitments
+        const outputCommitment0 = lightWasm.poseidonHashString([
+            output0.amount.toString(),
+            pubkey.toString(),
+            output0.blinding.toString(),
+            mintAddressField
+        ]);
+        const outputCommitment1 = lightWasm.poseidonHashString([
+            output1.amount.toString(),
+            pubkey.toString(),
+            output1.blinding.toString(),
+            mintAddressField
         ]);
         
         // Dummy Merkle paths (all zeros for fresh deposit)
@@ -308,14 +342,14 @@ export class PrivacyCashBrowser {
         return {
             // Common transaction data
             root: treeRoot,
-            inputNullifier: [inputNullifier0.toString(), inputNullifier1.toString()],
-            outputCommitment: [outputCommitment0.toString(), outputCommitment1.toString()],
+            inputNullifier: [inputNullifier0, inputNullifier1],
+            outputCommitment: [outputCommitment0, outputCommitment1],
             publicAmount: publicAmountForCircuit.toString(),
             extDataHash,
             
             // Input UTXO data
             inAmount: [input0.amount.toString(10), input1.amount.toString(10)],
-            inPrivateKey: [input0.privkey, input1.privkey],
+            inPrivateKey: [privkeyBN.toString(), privkeyBN.toString()],
             inBlinding: [input0.blinding.toString(10), input1.blinding.toString(10)],
             inPathIndices: inputMerklePathIndices,
             inPathElements: inputMerklePathElements,
@@ -325,8 +359,8 @@ export class PrivacyCashBrowser {
             outBlinding: [output0.blinding.toString(10), output1.blinding.toString(10)],
             outPubkey: [pubkey.toString(), pubkey.toString()],
             
-            // Mint address (0x0 for SOL)
-            mintAddress: '0x0000000000000000000000000000000000000000000000000000000000000000'
+            // Mint address (0 for native SOL)
+            mintAddress: mintAddressField
         };
     }
 
