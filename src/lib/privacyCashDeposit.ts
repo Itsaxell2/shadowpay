@@ -89,50 +89,74 @@ export function getPrivacyCashInstance(): PrivacyCash {
 
 /**
  * Deposit SOL using Privacy Cash SDK
+ * CORRECTED: User signs TX in browser, backend only forwards
+ * 
+ * Architecture Flow:
+ * 1. Browser: Build & sign TX with Privacy Cash SDK (user = fee payer)
+ * 2. Browser: Send signed TX to backend via API
+ * 3. Backend: Forward signed TX to relayer
+ * 4. Relayer: Submit pre-signed TX to Solana blockchain
  * 
  * @param amountLamports - Amount to deposit in lamports
- * @param privacyCash - Privacy Cash SDK instance
+ * @param privacyCash - Privacy Cash SDK instance (with user wallet)
+ * @param linkId - Optional payment link ID
  * 
  * @returns DepositResult with tx signature
  */
 export async function depositSOL({
   amountLamports,
   privacyCash,
+  linkId,
 }: {
   amountLamports: number;
   privacyCash: PrivacyCash;
+  linkId?: string;
 }): Promise<DepositResult> {
-  console.log("💰 Starting Privacy Cash deposit (SDK)...");
+  console.log("💰 Starting Privacy Cash deposit (BROWSER SIGNING)...");
   console.log("   Amount:", amountLamports / LAMPORTS_PER_SOL, "SOL");
-  console.log("   Mode: OFFICIAL SDK");
+  console.log("   Mode: User signs in browser");
 
   try {
-    console.log("\n🔐 Calling Privacy Cash SDK deposit()...");
+    console.log("\n🔐 Step 1: Building & signing TX with Privacy Cash SDK...");
     console.log("   ⏳ SDK will:");
     console.log("      1. Generate ZK proof in browser");
-    console.log("      2. Update Merkle tree");
-    console.log("      3. Submit via relayer");
-    console.log("      4. Store encrypted UTXO");
+    console.log("      2. Build transaction (user = fee payer)");
+    console.log("      3. Sign with user wallet (Phantom)");
     console.log("   This may take 10-30 seconds...");
 
+    // SDK builds and signs transaction
+    // User wallet is fee payer (has private key)
     const result = await privacyCash.deposit({
       lamports: amountLamports,
     });
 
+    console.log("   ✅ Transaction built & signed by user!");
+    console.log("   TX:", result.tx);
+
+    // Import submitSignedDeposit dynamically to avoid circular deps
+    const { submitSignedDeposit } = await import('./privacyCashClientSigned');
+
+    console.log("\n📤 Step 2: Submitting signed TX via backend...");
+    
+    // Submit pre-signed transaction to backend
+    const submitResult = await submitSignedDeposit({
+      signedTransaction: result.tx, // This is the signed TX from SDK
+      linkId,
+    });
+
     console.log("\n🎉 DEPOSIT COMPLETE!");
-    console.log("   SDK handled everything:");
-    console.log("   ✅ ZK proof generated");
-    console.log("   ✅ Transaction submitted:", result.tx);
-    console.log("   ✅ UTXO encrypted and stored");
-    console.log("   ✅ Merkle tree updated");
+    console.log("   ✅ TX signed by user (fee paid from user wallet)");
+    console.log("   ✅ TX submitted via backend/relayer");
+    console.log("   ✅ Signature:", submitResult.txSignature);
+    console.log("   ✅ UTXO encrypted and stored by SDK");
 
     return {
-      txSignature: result.tx,
+      txSignature: submitResult.txSignature,
       success: true,
     };
   } catch (error) {
     console.error("\n❌ DEPOSIT FAILED:", error);
-    console.error("   This is an SDK error - check Privacy Cash documentation");
+    console.error("   Check: User wallet must have SOL for fees");
     throw error;
   }
 }
