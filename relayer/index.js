@@ -187,47 +187,72 @@ app.get("/health", async (_, res) => {
 });
 
 /* ─────────────────────────────────────
-   DEPOSIT (WITHOUT PRIVACY CASH SDK)
+   DEPOSIT (WITH PRIVACY CASH SDK)
 ───────────────────────────────────── */
-// SIMPLIFIED ARCHITECTURE:
-// User just pays link amount directly (regular SOL transfer)
-// Privacy Cash withdrawals happen later when recipient claims
-// This avoids all SDK complexity for deposits
+// CORRECT ARCHITECTURE:
+// Frontend → Backend → Relayer → Privacy Cash SDK
+// Relayer creates ZK proof and submits transaction
+// User DOES NOT sign anything (privacy-preserving)
 
 app.post("/deposit", authenticateRequest, async (req, res) => {
   try {
-    const { linkId, txSignature, amount } = req.body;
+    const { amount, walletAddress, linkId, lamports } = req.body;
 
-    if (!txSignature) {
-      return res.status(400).json({ 
-        error: "txSignature required - user must complete payment first"
+    // Accept either amount (SOL) or lamports
+    const depositLamports = lamports || (amount ? Math.floor(amount * LAMPORTS_PER_SOL) : null);
+
+    if (!depositLamports || depositLamports <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    if (!walletAddress) {
+      return res.status(400).json({ error: "walletAddress required" });
+    }
+
+    if (!linkId) {
+      return res.status(400).json({ error: "linkId required" });
+    }
+
+    console.log("💰 Privacy Cash DEPOSIT via relayer");
+    console.log("   Amount:", depositLamports / LAMPORTS_PER_SOL, "SOL");
+    console.log("   From wallet:", walletAddress);
+    console.log("   Link:", linkId);
+
+    // Wait for SDK to be ready
+    if (!privacyCashClient) {
+      return res.status(503).json({ 
+        error: "Privacy Cash SDK not initialized yet. Retry in a few seconds." 
       });
     }
 
-    console.log(`📥 Recording deposit...`);
-    console.log(`   TX: ${txSignature}`);
-    console.log(`   Link: ${linkId || 'none'}`);
-    console.log(`   Amount: ${amount || 'unknown'} SOL`);
+    const startTime = Date.now();
 
-    // Just verify transaction exists on blockchain
-    const tx = await connection.getTransaction(txSignature, {
-      commitment: 'confirmed'
+    // 🔐 PRIVACY CASH DEPOSIT (THE CORE)
+    console.log("🔐 Calling Privacy Cash SDK deposit()...");
+    const result = await privacyCashClient.deposit({
+      lamports: depositLamports,
     });
 
-    if (!tx) {
-      throw new Error('Transaction not found or not confirmed');
+    const duration = Date.now() - startTime;
+
+    if (!result || !result.tx) {
+      throw new Error("Privacy Cash deposit failed: no transaction signature");
     }
 
-    console.log(`✅ Deposit verified on blockchain`);
-    console.log(`   Block: ${tx.slot}`);
+    console.log("✅ Deposit successful");
+    console.log("   TX:", result.tx);
+    console.log("   Commitment:", result.commitment || 'N/A');
+    console.log("   Duration:", duration, "ms");
+    console.log("   Verify: https://solscan.io/tx/" + result.tx);
 
     res.json({
       success: true,
-      tx: txSignature,
-      verified: true
+      txSignature: result.tx,
+      commitment: result.commitment || null,
+      amount: depositLamports / LAMPORTS_PER_SOL
     });
   } catch (err) {
-    console.error("❌ Deposit verification error:", err);
+    console.error("❌ Deposit error:", err);
     res.status(500).json({ error: err.message });
   }
 });
