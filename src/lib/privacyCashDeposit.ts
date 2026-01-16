@@ -89,17 +89,19 @@ export function getPrivacyCashInstance(): PrivacyCash {
 
 /**
  * Deposit SOL using Privacy Cash SDK
- * CORRECTED: User signs TX in browser, backend only forwards
+ * OFFICIAL FLOW: SDK handles everything end-to-end
  * 
  * Architecture Flow:
- * 1. Browser: Build & sign TX with Privacy Cash SDK (user = fee payer)
- * 2. Browser: Send signed TX to backend via API
- * 3. Backend: Forward signed TX to relayer
- * 4. Relayer: Submit pre-signed TX to Solana blockchain
+ * 1. Browser: SDK generates ZK proof
+ * 2. Browser: SDK builds transaction (user = fee payer)
+ * 3. Browser: User signs with Phantom
+ * 4. Browser: SDK submits directly to Solana blockchain
+ * 
+ * NO BACKEND/RELAYER - SDK does direct blockchain submission
  * 
  * @param amountLamports - Amount to deposit in lamports
  * @param privacyCash - Privacy Cash SDK instance (with user wallet)
- * @param linkId - Optional payment link ID
+ * @param linkId - Optional payment link ID (for tracking only)
  * 
  * @returns DepositResult with tx signature
  */
@@ -112,51 +114,59 @@ export async function depositSOL({
   privacyCash: PrivacyCash;
   linkId?: string;
 }): Promise<DepositResult> {
-  console.log("💰 Starting Privacy Cash deposit (BROWSER SIGNING)...");
+  console.log("💰 Starting Privacy Cash deposit...");
   console.log("   Amount:", amountLamports / LAMPORTS_PER_SOL, "SOL");
-  console.log("   Mode: User signs in browser");
+  console.log("   Link ID:", linkId || "N/A");
 
   try {
-    console.log("\n🔐 Step 1: Building & signing TX with Privacy Cash SDK...");
-    console.log("   ⏳ SDK will:");
-    console.log("      1. Generate ZK proof in browser");
-    console.log("      2. Build transaction (user = fee payer)");
-    console.log("      3. Sign with user wallet (Phantom)");
-    console.log("   This may take 10-30 seconds...");
+    console.log("\n🔐 Privacy Cash SDK will:");
+    console.log("   1. Generate ZK proof (10-30 seconds)");
+    console.log("   2. Build transaction");
+    console.log("   3. Request signature via Phantom");
+    console.log("   4. Submit directly to Solana");
 
-    // SDK builds and signs transaction
-    // User wallet is fee payer (has private key)
+    // SDK handles EVERYTHING: ZK proof → build → sign → submit
+    // User wallet is fee payer and signs transaction
     const result = await privacyCash.deposit({
       lamports: amountLamports,
     });
 
-    console.log("   ✅ Transaction built & signed by user!");
-    console.log("   TX:", result.tx);
-
-    // Import submitSignedDeposit dynamically to avoid circular deps
-    const { submitSignedDeposit } = await import('./privacyCashClientSigned');
-
-    console.log("\n📤 Step 2: Submitting signed TX via backend...");
-    
-    // Submit pre-signed transaction to backend
-    const submitResult = await submitSignedDeposit({
-      signedTransaction: result.tx, // This is the signed TX from SDK
-      linkId,
-    });
-
     console.log("\n🎉 DEPOSIT COMPLETE!");
-    console.log("   ✅ TX signed by user (fee paid from user wallet)");
-    console.log("   ✅ TX submitted via backend/relayer");
-    console.log("   ✅ Signature:", submitResult.txSignature);
-    console.log("   ✅ UTXO encrypted and stored by SDK");
+    console.log("   ✅ TX:", result.tx);
+    console.log("   ✅ ZK proof generated");
+    console.log("   ✅ Commitment stored on-chain");
+    console.log("   ✅ UTXO encrypted");
+
+    // Optional: Notify backend for tracking (not required for deposit)
+    if (linkId) {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL;
+        if (apiUrl) {
+          await fetch(`${apiUrl}/privacy/deposit-complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              linkId,
+              txSignature: result.tx,
+              amountLamports,
+            }),
+          }).catch(err => console.warn('Backend notification failed (non-critical):', err));
+        }
+      } catch (err) {
+        console.warn('Backend tracking notification failed (non-critical):', err);
+      }
+    }
 
     return {
-      txSignature: submitResult.txSignature,
+      txSignature: result.tx,
       success: true,
     };
   } catch (error) {
     console.error("\n❌ DEPOSIT FAILED:", error);
-    console.error("   Check: User wallet must have SOL for fees");
+    console.error("   Check:");
+    console.error("   - User wallet has SOL for fees");
+    console.error("   - Wallet is on mainnet-beta");
+    console.error("   - Privacy Cash SDK initialized correctly");
     throw error;
   }
 }
