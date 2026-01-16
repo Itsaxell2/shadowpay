@@ -6,7 +6,7 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!circuits/).*)",
       "destination": "/index.html"
     }
   ],
