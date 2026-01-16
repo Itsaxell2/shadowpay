@@ -187,90 +187,58 @@ app.get("/health", async (_, res) => {
 });
 
 /* ─────────────────────────────────────
-   DEPOSIT - NOT HANDLED BY RELAYER
+   DEPOSIT
 ───────────────────────────────────── */
-// MODEL B: Deposits happen CLIENT-SIDE
-// Client builds, signs, and submits deposit to RPC directly
-// Relayer NEVER touches deposits (privacy requirement)
+// Privacy Cash Architecture:
+// - User MUST be fee payer (by design)
+// - User signs transaction in browser
+// - Backend/relayer only forwards signed transaction
 //
-// If deposit endpoint is called, it's a mistake
+// Flow:
+// 1. Browser: User builds & signs TX with Privacy Cash SDK
+// 2. Browser: Sends signed TX to backend
+// 3. Backend: Forwards to relayer
+// 4. Relayer: Submits signed TX to blockchain
+//
+// ❌ WRONG: Backend calls SDK.deposit() without user signature
+// ✅ CORRECT: User signs, backend submits pre-signed TX
+
 app.post("/deposit", authenticateRequest, async (req, res) => {
   try {
-    const { lamports, payerPublicKey, linkId, referrer } = req.body;
+    const { signedTransaction, linkId } = req.body;
 
-    if (!lamports || lamports <= 0) {
-      return res.status(400).json({ error: "Invalid lamports amount" });
+    if (!signedTransaction) {
+      return res.status(400).json({ 
+        error: "signedTransaction required",
+        message: "Privacy Cash deposits must be signed by user in browser"
+      });
     }
 
-    if (!payerPublicKey) {
-      return res.status(400).json({ error: "payerPublicKey required" });
-    }
-
-    // Validate payer address
-    try {
-      new PublicKey(payerPublicKey);
-    } catch {
-      return res.status(400).json({ error: "Invalid payer address" });
-    }
-
-    console.log(`💰 Depositing ${lamports / LAMPORTS_PER_SOL} SOL to Privacy Cash pool...`);
-    console.log(`👤 Payer: ${payerPublicKey}`);
+    console.log(`📥 Receiving signed deposit transaction...`);
     console.log(`🔗 Link: ${linkId || 'none'}`);
-    console.log(`🔑 Fee Payer (Relayer): ${relayerKeypair.publicKey.toBase58()}`);
-    
-    // Check if relayer has enough balance for fees
-    const relayerBalance = await connection.getBalance(relayerKeypair.publicKey);
-    console.log(`💵 Relayer balance: ${relayerBalance / LAMPORTS_PER_SOL} SOL`);
-    
-    if (relayerBalance < 0.01 * LAMPORTS_PER_SOL) {
-      throw new Error(`Insufficient relayer balance: ${relayerBalance / LAMPORTS_PER_SOL} SOL (need at least 0.01 SOL for fees)`);
-    }
     
     const startTime = Date.now();
 
-    // ARCHITECTURE NOTE:
-    // Relayer uses its own keypair to deposit to Privacy Cash pool.
-    // This is privacy-preserving because:
-    // 1. User sends SOL to relayer (normal transfer)
-    // 2. Relayer deposits to Privacy Cash pool using SDK
-    // 3. On-chain: relayer → pool (user identity hidden)
-    // 4. Relayer returns commitment to user for later withdrawal
-    // 
-    // Privacy Cash SDK generates:
-    // - Commitment (user stores this secret)
-    // - Nullifier (used during withdrawal)
-    // - ZK proof (proves funds exist without revealing payer)
-    
-    console.log("🔐 Calling Privacy Cash SDK deposit...");
-    console.log(`   SDK owner: ${relayerKeypair.publicKey.toBase58()}`);
-    console.log(`   Amount: ${lamports} lamports`);
-    
-    const result = await privacyCashClient.deposit({
-      lamports,
-      referrer: referrer || undefined
-    }).catch(err => {
-      console.error("❌ SDK deposit error:", err.message);
-      console.error("❌ Error details:", err);
-      throw err;
+    // Decode and submit the pre-signed transaction
+    const txBuffer = Buffer.from(signedTransaction, 'base64');
+    const signature = await connection.sendRawTransaction(txBuffer, {
+      skipPreflight: false,
+      preflightCommitment: 'confirmed'
     });
 
+    // Wait for confirmation
+    await connection.confirmTransaction(signature, 'confirmed');
+    
     const duration = Date.now() - startTime;
 
-    if (!result || !result.tx) {
-      throw new Error("Deposit failed: no transaction signature");
-    }
-
-    console.log(`✅ Deposit successful: ${result.tx}`);
+    console.log(`✅ Deposit successful: ${signature}`);
     console.log(`⏱️  Duration: ${duration}ms`);
-    console.log(`📋 Verify: https://solscan.io/tx/${result.tx}`);
+    console.log(`📋 Verify: https://solscan.io/tx/${signature}`);
 
-    // Return commitment to user - THIS IS THE SECRET they need for withdrawal
     res.json({
       success: true,
-      tx: result.tx,
-      lamports,
-      commitment: result.commitment || result.tx, // Privacy Cash SDK should return commitment
-      timestamp: Date.now()
+      tx: signature,
+      // Note: commitment is generated client-side and stored by user
     });
   } catch (err) {
     console.error("❌ Deposit error:", err);
