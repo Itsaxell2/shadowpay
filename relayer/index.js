@@ -263,28 +263,6 @@ app.post("/build-deposit", authenticateRequest, async (req, res) => {
   }
 });
 
-    if (!result || !result.tx) {
-      throw new Error("Privacy Cash deposit failed: no transaction signature");
-    }
-
-    console.log("✅ Deposit successful");
-    console.log("   TX:", result.tx);
-    console.log("   Commitment:", result.commitment || 'N/A');
-    console.log("   Duration:", duration, "ms");
-    console.log("   Verify: https://solscan.io/tx/" + result.tx);
-
-    res.json({
-      success: true,
-      txSignature: result.tx,
-      commitment: result.commitment || null,
-      amount: depositLamports / LAMPORTS_PER_SOL
-    });
-  } catch (err) {
-    console.error("❌ Deposit error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 /* ─────────────────────────────────────
    WITHDRAW (Privacy-Preserving)
 ───────────────────────────────────── */
