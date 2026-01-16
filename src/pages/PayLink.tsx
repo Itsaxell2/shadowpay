@@ -108,72 +108,81 @@ const PayLink = () => {
     setPaymentState("processing");
 
     try {
-      console.log("💰 Starting Privacy Cash deposit (Browser SDK)...");
+      console.log("💰 Starting Privacy Cash deposit (Browser Wrapper)...");
       console.log("   Amount:", paymentData.amount, token);
       console.log("   Link ID:", linkId);
       console.log("   Wallet:", publicKey);
-      console.log("   ✅ CORRECT: Using PrivacyCash class PUBLIC API");
+      console.log("   ✅ USING: Browser-compatible wrapper");
 
       const amount = parseFloat(paymentData.amount);
       const amountLamports = Math.floor(amount * 1_000_000_000);
 
-      // ✅ CORRECT: Import Privacy Cash SDK PUBLIC API
-      console.log("\n📦 Step 1: Initialize Privacy Cash SDK...");
-      const { PrivacyCash } = await import('privacycash');
+      // ✅ CORRECT: Use browser wrapper instead of broken SDK
+      console.log("\n📦 Step 1: Initialize Privacy Cash browser wrapper...");
+      const { PrivacyCashBrowser } = await import('@/lib/privacyCashBrowser');
       
-      // Get Phantom wallet adapter
+      // Get Phantom wallet
       const phantom = (window as any).phantom?.solana;
-      if (!phantom) {
-        throw new Error("Phantom wallet not found");
+      if (!phantom || !phantom.isConnected) {
+        throw new Error("Phantom wallet not connected");
       }
 
-      // Initialize SDK with Phantom wallet adapter
+      // Initialize browser wrapper
       const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=c455719c-354b-4a44-98d4-27f8a18aa79c';
       
-      console.log("   Creating PrivacyCash instance with Phantom adapter...");
-      const privacyCash = new PrivacyCash({
-        RPC_url: rpcUrl,
-        owner: phantom, // Phantom wallet adapter
-        enableDebug: false
-      });
+      console.log("   Creating PrivacyCashBrowser instance...");
+      const privacyCash = new PrivacyCashBrowser(rpcUrl);
 
-      console.log("✅ SDK initialized");
-      console.log("\n🔐 Step 2: Generate ZK proof and deposit...");
-      console.log("   This will take 10-30 seconds");
-      console.log("   SDK will:");
-      console.log("   - Generate commitment & nullifier");
-      console.log("   - Create ZK circuit proof");
+      console.log("✅ Browser wrapper initialized");
+      console.log("\n🔐 Step 2: Deposit with ZK proof...");
+      console.log("   This will:");
+      console.log("   - Load circuit files (19MB, cached after first use)");
+      console.log("   - Generate ZK proof");
       console.log("   - Build transaction");
       console.log("   - Request Phantom signature");
-      console.log("   - Submit to Solana");
+      console.log("   - Submit to Privacy Cash relayer");
 
-      // ✅ CORRECT: Call PUBLIC deposit() method
+      // Create signTransaction function for Phantom
+      const signTransaction = async (tx: any) => {
+        return await phantom.signTransaction(tx);
+      };
+
+      // ✅ CORRECT: Call browser wrapper deposit()
       const result = await privacyCash.deposit({
-        lamports: amountLamports
+        lamports: amountLamports,
+        phantomPublicKey: phantom.publicKey,
+        signTransaction,
+        onProgress: (msg) => {
+          console.log('   Progress:', msg);
+          toast.loading(msg, { id: 'deposit-progress' });
+        }
       });
 
       console.log("\n🎉 Deposit successful!");
-      console.log("   TX:", result.tx);
+      console.log("   TX:", result.signature);
       console.log("   ✅ Privacy preserved via ZK proof");
       console.log("   ✅ UTXO owned by your wallet");
       console.log("   ✅ Recipient identity hidden");
 
       const network = 'mainnet-beta';
-      setTxSignature(result.tx);
-      setExplorerUrl(`https://explorer.solana.com/tx/${result.tx}?cluster=${network}`);
+      setTxSignature(result.signature);
+      setExplorerUrl(`https://explorer.solana.com/tx/${result.signature}?cluster=${network}`);
       
       // Success - update state
       setPaymentState("success");
       
+      toast.dismiss('deposit-progress');
       toast.success('Payment Successful!', {
-        description: `Transaction: ${result.tx.substring(0, 8)}...`,
+        description: `Transaction: ${result.signature.substring(0, 8)}...`,
       });
       
     } catch (error: any) {
       const message = error instanceof Error ? error.message : "Payment failed";
       console.error("❌ Payment error:", message);
+      console.error("Full error:", error);
       setError(message);
       
+      toast.dismiss('deposit-progress');
       toast.error('Payment Failed', {
         description: message,
       });
