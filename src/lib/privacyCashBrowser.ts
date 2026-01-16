@@ -134,7 +134,7 @@ export class PrivacyCashBrowser {
 
         // Build circuit input
         onProgress?.('Generating zero-knowledge proof...');
-        const circuitInput = this.buildCircuitInput({
+        const circuitInput = await this.buildCircuitInput({
             amount: lamports,
             treeRoot: treeState.root,
             nextIndex: treeState.nextIndex,
@@ -220,24 +220,113 @@ export class PrivacyCashBrowser {
 
     /**
      * Build circuit input untuk ZK proof
+     * Matches SDK deposit.ts circuit input structure
      */
-    private buildCircuitInput(params: {
+    private async buildCircuitInput(params: {
         amount: number;
         treeRoot: string;
         nextIndex: number;
         utxoPrivateKey: string;
         lightWasm: any;
     }) {
-        // Simplified circuit input
-        // In production, need full UTXO logic dari SDK
-        const publicAmount = new BN(params.amount).add(FIELD_SIZE).mod(FIELD_SIZE);
+        const { amount, treeRoot, nextIndex, utxoPrivateKey, lightWasm } = params;
         
+        // Fresh deposit scenario: 2 dummy inputs, 1 real output + 1 dummy output
+        const fee = 0; // No fee for now
+        const extAmount = amount;
+        const publicAmountForCircuit = new BN(extAmount).sub(new BN(fee)).add(FIELD_SIZE).mod(FIELD_SIZE);
+        const outputAmount = new BN(amount).sub(new BN(fee));
+        
+        // Generate random blindings for UTXOs
+        const randomBlinding = () => {
+            const bytes = new Uint8Array(31);
+            window.crypto.getRandomValues(bytes);
+            return new BN(Buffer.from(bytes));
+        };
+        
+        // Dummy inputs (amount = 0, random blindings)
+        const input0 = {
+            amount: new BN(0),
+            blinding: randomBlinding(),
+            privkey: utxoPrivateKey
+        };
+        const input1 = {
+            amount: new BN(0),
+            blinding: randomBlinding(),
+            privkey: utxoPrivateKey
+        };
+        
+        // Real outputs
+        const output0 = {
+            amount: outputAmount,
+            blinding: randomBlinding(),
+            index: nextIndex
+        };
+        const output1 = {
+            amount: new BN(0),
+            blinding: randomBlinding(),
+            index: nextIndex + 1
+        };
+        
+        // Calculate nullifiers (hash of privkey + blinding)
+        const inputNullifier0 = lightWasm.poseidon([
+            BigInt(input0.privkey),
+            BigInt(input0.blinding.toString())
+        ]);
+        const inputNullifier1 = lightWasm.poseidon([
+            BigInt(input1.privkey),
+            BigInt(input1.blinding.toString())
+        ]);
+        
+        // Derive public key from private key (simplified)
+        const pubkey = lightWasm.poseidon([BigInt(utxoPrivateKey)]);
+        
+        // Calculate output commitments (hash of amount + pubkey + blinding)
+        const outputCommitment0 = lightWasm.poseidon([
+            BigInt(output0.amount.toString()),
+            pubkey,
+            BigInt(output0.blinding.toString())
+        ]);
+        const outputCommitment1 = lightWasm.poseidon([
+            BigInt(output1.amount.toString()),
+            pubkey,
+            BigInt(output1.blinding.toString())
+        ]);
+        
+        // Dummy Merkle paths (all zeros for fresh deposit)
+        const MERKLE_TREE_DEPTH = 20;
+        const inputMerklePathIndices = [0, 0];
+        const inputMerklePathElements = [
+            new Array(MERKLE_TREE_DEPTH).fill('0'),
+            new Array(MERKLE_TREE_DEPTH).fill('0')
+        ];
+        
+        // ExtDataHash (simplified - set to 0 for now)
+        const extDataHash = '0';
+        
+        // Circuit input (matches SDK structure exactly)
         return {
-            root: params.treeRoot,
-            publicAmount: publicAmount.toString(),
-            extDataHash: '0', // Placeholder
-            // ... other circuit inputs
-            // TODO: Extract full logic dari privacy-cash-sdk/src/deposit.ts
+            // Common transaction data
+            root: treeRoot,
+            inputNullifier: [inputNullifier0.toString(), inputNullifier1.toString()],
+            outputCommitment: [outputCommitment0.toString(), outputCommitment1.toString()],
+            publicAmount: publicAmountForCircuit.toString(),
+            extDataHash,
+            
+            // Input UTXO data
+            inAmount: [input0.amount.toString(10), input1.amount.toString(10)],
+            inPrivateKey: [input0.privkey, input1.privkey],
+            inBlinding: [input0.blinding.toString(10), input1.blinding.toString(10)],
+            inPathIndices: inputMerklePathIndices,
+            inPathElements: inputMerklePathElements,
+            
+            // Output UTXO data
+            outAmount: [output0.amount.toString(10), output1.amount.toString(10)],
+            outBlinding: [output0.blinding.toString(10), output1.blinding.toString(10)],
+            outPubkey: [pubkey.toString(), pubkey.toString()],
+            
+            // Mint address (0x0 for SOL)
+            mintAddress: '0x0000000000000000000000000000000000000000000000000000000000000000'
         };
     }
 
