@@ -133,11 +133,9 @@ async function initialize() {
   let privacyCashClient = null;
   
   try {
-    // Privacy Cash SDK accepts: string (base58) | number[] | Uint8Array | Keypair
-    // Pass the secret key array directly (64 bytes)
     privacyCashClient = new PrivacyCash({
       RPC_url: RPC_URL,
-      owner: secret  // Pass the secret array directly, not Keypair object
+      owner: relayerKeypair
     });
     console.log("✅ Privacy Cash SDK initialized\n");
     
@@ -197,15 +195,16 @@ app.get("/health", async (_, res) => {
 });
 
 /* ─────────────────────────────────────
-   BUILD DEPOSIT TRANSACTION (HYBRID APPROACH)
+   BUILD DEPOSIT TRANSACTION (CORRECT HYBRID APPROACH)
 ───────────────────────────────────── */
-// CORRECT ARCHITECTURE:
-// 1. Backend builds transaction with Privacy Cash SDK (Node.js)
-// 2. User signs transaction with Phantom (browser)
-// 3. User submits transaction to blockchain (browser)
-// 
-// Backend: Has Privacy Cash SDK (fs, wasm, zk circuits work)
-// User: Signs & pays fees (owns UTXO, privacy preserved)
+// ✅ CORRECT ARCHITECTURE:
+// 1. Backend: Generate ZK proof + build transaction (Privacy Cash SDK)
+// 2. Backend: Return UNSIGNED transaction to frontend
+// 3. Frontend: User signs with Phantom (user = fee payer = UTXO owner)
+// 4. Frontend: Submit signed transaction directly to Solana
+//
+// Key: Backend has SDK (circuits, wasm) but NEVER signs
+// Key: User signs + pays fees + owns UTXO
 
 app.post("/build-deposit", authenticateRequest, async (req, res) => {
   try {
@@ -219,50 +218,102 @@ app.post("/build-deposit", authenticateRequest, async (req, res) => {
       return res.status(400).json({ error: "User public key required" });
     }
 
-    console.log("💰 Processing Privacy Cash deposit...");
+    console.log("🏗️  Building Privacy Cash transaction (ZK proof generation)");
     console.log("   Amount:", lamports / LAMPORTS_PER_SOL, "SOL");
-    console.log("   User:", userPublicKey);
+    console.log("   User (signer + fee payer + UTXO owner):", userPublicKey);
     console.log("   Link:", linkId);
-    console.log("   Architecture: Relayer pays gas, user gets encrypted UTXO");
 
     const startTime = Date.now();
 
-    // Create Privacy Cash SDK instance for this request
-    console.log("🔐 Creating Privacy Cash SDK instance...");
-    const client = new PrivacyCash({
-      RPC_url: RPC_URL,
-      owner: secret  // Relayer's secret key
-    });
-
-    // Execute deposit - relayer pays gas, creates encrypted UTXO
-    console.log("🔐 Executing deposit via relayer...");
-    console.log("   ⏳ Generating ZK proof (10-30 seconds)...");
+    // Import SDK components
+    const { deposit } = await import('privacycash/dist/deposit.js');
+    const { WasmFactory } = await import('@lightprotocol/hasher.rs');
+    const { EncryptionService } = await import('privacycash/dist/utils/encryption.js');
+    const { LocalStorage } = await import('node-localstorage');
+    const path = await import('path');
     
-    const result = await client.deposit({
-      lamports: lamports
-    });
-
-    const duration = Date.now() - startTime;
-
-    console.log("✅ Deposit successful in", duration, "ms");
-    console.log("   TX:", result.tx);
-    console.log("   UTXO encrypted and stored in Privacy Cash pool");
-
-    // Store mapping between linkId and transaction
-    // This allows recipient to claim later
-    if (linkId) {
-      console.log("   Linked to payment ID:", linkId);
+    const storage = new LocalStorage(path.join(process.cwd(), "cache"));
+    const userPubkey = new PublicKey(userPublicKey);
+    
+    console.log("🔐 Generating ZK proof (10-30 seconds)...");
+    console.log("   This will generate commitment, nullifier, and ZK circuit proof");
+    
+    const lightWasm = await WasmFactory.getInstance();
+    const encryptionService = new EncryptionService();
+    
+    // Dummy keypair for encryption derivation
+    // User will use their own wallet for actual signing
+    const { Keypair } = await import('@solana/web3.js');
+    const dummyKeypair = Keypair.generate();
+    encryptionService.deriveEncryptionKeyFromWallet(dummyKeypair);
+    
+    let capturedTransaction = null;
+    
+    // Call SDK deposit with custom transactionSigner
+    // We'll intercept the unsigned transaction before SDK tries to submit
+    try {
+      await deposit({
+        lightWasm,
+        storage,
+        keyBasePath: path.join(process.cwd(), 'circuit2', 'transaction2'),
+        publicKey: userPubkey,
+        connection,
+        amount_in_lamports: lamports,
+        encryptionService,
+        signer: userPubkey,
+        transactionSigner: async (tx) => {
+          // INTERCEPT: Capture unsigned transaction
+          capturedTransaction = tx;
+          console.log("✅ Unsigned transaction captured");
+          console.log("   Transaction will be returned to frontend for signing");
+          
+          // Return the transaction unsigned
+          // SDK will try to submit it, but we'll catch the error
+          return tx;
+        }
+      });
+    } catch (err) {
+      // Expected: SDK will fail when trying to submit unsigned transaction
+      // Check if we successfully captured the transaction
+      if (capturedTransaction && (err.message.includes('response not ok') || err.message.includes('Invalid transaction'))) {
+        console.log("✅ Transaction captured successfully (SDK submission expected to fail)");
+        const duration = Date.now() - startTime;
+        
+        // Serialize unsigned transaction
+        const txBase64 = Buffer.from(capturedTransaction.serialize()).toString('base64');
+        
+        console.log("✅ ZK proof generated in", duration, "ms");
+        console.log("   Returning unsigned transaction to frontend");
+        
+        return res.json({
+          success: true,
+          transaction: txBase64,
+          duration: duration,
+          linkId: linkId
+        });
+      }
+      
+      // Real error - not related to unsigned tx submission
+      throw err;
     }
 
+    // If we reach here, something unexpected happened
+    if (!capturedTransaction) {
+      throw new Error("Failed to capture transaction from SDK");
+    }
+
+    const duration = Date.now() - startTime;
+    const txBase64 = Buffer.from(capturedTransaction.serialize()).toString('base64');
+    
     res.json({
       success: true,
-      txSignature: result.tx,
+      transaction: txBase64,
       duration: duration,
       linkId: linkId
     });
 
   } catch (err) {
-    console.error("❌ Deposit error:", err);
+    console.error("❌ Build transaction error:", err);
     res.status(500).json({ error: err.message });
   }
 });

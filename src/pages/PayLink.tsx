@@ -67,6 +67,15 @@ const PayLink = () => {
     // Prevent double-click (critical: stops duplicate payments)
     if (paymentState === "processing") return;
     
+    // CRITICAL: Wallet REQUIRED for Privacy Cash (user MUST sign)
+    if (!connected || !publicKey) {
+      setError("Please connect your wallet to pay");
+      toast.error('Wallet Required', {
+        description: 'Privacy Cash requires your signature',
+      });
+      return;
+    }
+    
     // Validate payment amount
     if (!paymentData?.amount || paymentData.amount === "—" || isNaN(parseFloat(paymentData.amount))) {
       setError("Invalid payment amount. This link requires a fixed amount but none was specified. Please contact the sender.");
@@ -99,65 +108,96 @@ const PayLink = () => {
     setPaymentState("processing");
 
     try {
-      console.log("💰 Starting Privacy Cash deposit via relayer...");
+      console.log("💰 Starting Privacy Cash deposit...");
       console.log("   Amount:", paymentData.amount, token);
       console.log("   Link ID:", linkId);
-      console.log("   Architecture: Relayer signs & pays gas → User gets private UTXO");
+      console.log("   Wallet:", publicKey);
+      console.log("   Architecture: Browser SDK → User Signs → Direct Blockchain");
 
       const amount = parseFloat(paymentData.amount);
       const amountLamports = Math.floor(amount * 1_000_000_000);
 
-      // Call backend API - relayer will handle everything
-      console.log("\n📤 Requesting relayer to process deposit...");
-      console.log("   Relayer will:");
-      console.log("   1. Generate ZK proof (10-30 seconds)");
-      console.log("   2. Sign transaction with relayer keypair");
-      console.log("   3. Pay transaction fees");
-      console.log("   4. Create encrypted UTXO in Privacy Cash pool");
+      // HYBRID APPROACH: Backend builds TX, User signs
+      console.log("\n📤 Step 1: Request transaction from backend...");
+      console.log("   Backend will use Privacy Cash SDK (Node.js)");
+      console.log("   Backend builds TX with YOUR wallet as fee payer");
       
       const apiUrl = import.meta.env.VITE_API_URL;
       if (!apiUrl) {
         throw new Error('API URL not configured');
       }
 
-      // Request backend to execute Privacy Cash deposit
-      const response = await fetch(`${apiUrl}/api/privacy/build-deposit`, {
+      // Request backend to build Privacy Cash transaction
+      const buildResponse = await fetch(`${apiUrl}/api/privacy/build-deposit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amountLamports,
-          userPublicKey: 'relayer', // Relayer will use its own keypair
+          userPublicKey: publicKey,
           linkId,
         }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || error.message || 'Failed to process payment');
+      if (!buildResponse.ok) {
+        const error = await buildResponse.json();
+        throw new Error(error.message || 'Failed to build transaction');
       }
 
-      const result = await response.json();
-      const txSignature = result.txSignature || result.tx;
+      const { transaction: txBase64 } = await buildResponse.json();
       
-      if (!txSignature) {
-        throw new Error('No transaction signature returned');
+      console.log("\n🔐 Step 2: Sign transaction with Phantom...");
+      console.log("   Phantom popup will appear now");
+      console.log("   You are signing as fee payer and UTXO owner");
+      
+      // Get Phantom
+      const phantom = (window as any).phantom?.solana;
+      if (!phantom) {
+        throw new Error("Phantom wallet not found");
       }
+
+      // Import Solana web3 - Privacy Cash uses VersionedTransaction
+      const { VersionedTransaction, Connection } = await import('@solana/web3.js');
+      
+      // Deserialize VersionedTransaction from base64
+      const txBytes = Buffer.from(txBase64, 'base64');
+      const tx = VersionedTransaction.deserialize(txBytes);
+      
+      console.log("   Transaction deserialized (VersionedTransaction)");
+      console.log("   Fee payer:", tx.message.staticAccountKeys[0].toString());
+      
+      // User signs with Phantom
+      const signedTx = await phantom.signTransaction(tx);
+      
+      console.log("✅ Transaction signed by user");
+      console.log("\n📡 Step 3: Submit signed transaction to blockchain...");
+      
+      // Submit to Solana
+      const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://api.mainnet-beta.solana.com';
+      const connection = new Connection(rpcUrl, 'confirmed');
+      const signature = await connection.sendRawTransaction(signedTx.serialize());
+      
+      console.log("✅ Transaction submitted:", signature);
+      console.log("   Waiting for confirmation...");
+      
+      // Wait for confirmation
+      await connection.confirmTransaction(signature, 'confirmed');
+      
+      const depositResult = { txSignature: signature };
 
       console.log("\n🎉 Payment successful!");
-      console.log("   ✅ TX:", txSignature);
+      console.log("   ✅ TX:", depositResult.txSignature);
       console.log("   ✅ Privacy preserved via ZK proof");
-      console.log("   ✅ Funds in Privacy Cash pool");
-      console.log("   ✅ Recipient can claim anonymously");
+      console.log("   ✅ Recipient identity hidden");
 
       const network = 'mainnet-beta';
-      setTxSignature(txSignature);
-      setExplorerUrl(`https://explorer.solana.com/tx/${txSignature}?cluster=${network}`);
+      setTxSignature(depositResult.txSignature);
+      setExplorerUrl(`https://explorer.solana.com/tx/${depositResult.txSignature}?cluster=${network}`);
       
       // Success - update state
       setPaymentState("success");
       
       toast.success('Payment Successful!', {
-        description: `Transaction: ${txSignature.substring(0, 8)}...`,
+        description: `Transaction: ${depositResult.txSignature.substring(0, 8)}...`,
       });
       
     } catch (error: any) {
@@ -276,21 +316,35 @@ const PayLink = () => {
                       </p>
                     </div>
 
-                    {/* Pay Button - NO wallet required (relayer handles everything) */}
-                    <Button
-                      variant="hero"
-                      size="xl"
-                      className="w-full group"
-                      onClick={handlePay}
-                      disabled={!paymentData?.amount || paymentData.amount === "—"}
-                    >
-                      <Lock className="w-5 h-5" />
-                      Pay {paymentData?.amount} {paymentData?.token} Privately
-                      <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
-                    </Button>
+                    {/* Pay Button - Wallet REQUIRED (user must sign) */}
+                    {!connected ? (
+                      <Button
+                        variant="hero"
+                        size="xl"
+                        className="w-full group"
+                        onClick={connect}
+                      >
+                        <Lock className="w-5 h-5" />
+                        Connect Wallet to Pay
+                        <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="hero"
+                        size="xl"
+                        className="w-full group"
+                        onClick={handlePay}
+                      >
+                        <Lock className="w-5 h-5" />
+                        Pay {paymentData?.amount} {paymentData?.token}
+                        <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+                      </Button>
+                    )}
 
                     <p className="text-xs text-muted-foreground text-center mt-4">
-                      No wallet connection required. Relayer processes payment privately.
+                      {connected 
+                        ? `Wallet: ${publicKey?.slice(0, 8)}...${publicKey?.slice(-4)}`
+                        : "Connect wallet to sign privacy deposit"}
                     </p>
                   </motion.div>
                 )}
