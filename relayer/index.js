@@ -216,6 +216,16 @@ app.post("/deposit", authenticateRequest, async (req, res) => {
     console.log(`💰 Depositing ${lamports / LAMPORTS_PER_SOL} SOL to Privacy Cash pool...`);
     console.log(`👤 Payer: ${payerPublicKey}`);
     console.log(`🔗 Link: ${linkId || 'none'}`);
+    console.log(`🔑 Fee Payer (Relayer): ${relayerKeypair.publicKey.toBase58()}`);
+    
+    // Check if relayer has enough balance for fees
+    const relayerBalance = await connection.getBalance(relayerKeypair.publicKey);
+    console.log(`💵 Relayer balance: ${relayerBalance / LAMPORTS_PER_SOL} SOL`);
+    
+    if (relayerBalance < 0.01 * LAMPORTS_PER_SOL) {
+      throw new Error(`Insufficient relayer balance: ${relayerBalance / LAMPORTS_PER_SOL} SOL (need at least 0.01 SOL for fees)`);
+    }
+    
     const startTime = Date.now();
 
     // ARCHITECTURE NOTE:
@@ -231,9 +241,17 @@ app.post("/deposit", authenticateRequest, async (req, res) => {
     // - Nullifier (used during withdrawal)
     // - ZK proof (proves funds exist without revealing payer)
     
+    console.log("🔐 Calling Privacy Cash SDK deposit...");
+    console.log(`   SDK owner: ${relayerKeypair.publicKey.toBase58()}`);
+    console.log(`   Amount: ${lamports} lamports`);
+    
     const result = await privacyCashClient.deposit({
       lamports,
       referrer: referrer || undefined
+    }).catch(err => {
+      console.error("❌ SDK deposit error:", err.message);
+      console.error("❌ Error details:", err);
+      throw err;
     });
 
     const duration = Date.now() - startTime;
