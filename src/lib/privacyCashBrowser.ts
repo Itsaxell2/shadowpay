@@ -14,7 +14,7 @@ import BN from 'bn.js';
 
 // Constants from Privacy Cash SDK
 const PROGRAM_ID = new PublicKey("zkcaWyMT45WD1rTiqcCMPdsBvfXgFEzBYe63XLFbNXc");
-const RELAYER_API_URL = "https://relayer.privacycash.com";
+const RELAYER_API_URL = "https://api3.privacycash.org";
 const MERKLE_TREE_DEPTH = 20;
 const FIELD_SIZE = new BN('21888242871839275222246405745257275088548364400416034343698204186575808495617');
 
@@ -114,7 +114,7 @@ export class PrivacyCashBrowser {
 
         // Get tree state from relayer
         onProgress?.('Fetching Merkle tree state...');
-        const treeState = await this.getTreeState();
+        const treeState = await this.queryRemoteTreeState();
         console.log('Tree state:', treeState);
 
         // Generate UTXO keypair (deterministic dari wallet)
@@ -171,12 +171,15 @@ export class PrivacyCashBrowser {
     }
 
     /**
-     * Get current Merkle tree state dari relayer
+     * Get current Merkle tree state dari relayer (matches SDK queryRemoteTreeState)
      */
-    private async getTreeState(): Promise<{ root: string; nextIndex: number }> {
-        const res = await fetch(`${RELAYER_API_URL}/tree-state`);
+    private async queryRemoteTreeState(): Promise<{ root: string; nextIndex: number }> {
+        console.log('🌳 Fetching Merkle root from:', `${RELAYER_API_URL}/merkle/root`);
+        const res = await fetch(`${RELAYER_API_URL}/merkle/root`);
         if (!res.ok) {
-            throw new Error('Failed to fetch tree state');
+            const errorText = await res.text();
+            console.error('Tree state fetch failed:', res.status, errorText);
+            throw new Error(`Failed to fetch Merkle root: ${res.status} ${res.statusText}`);
         }
         return await res.json();
     }
