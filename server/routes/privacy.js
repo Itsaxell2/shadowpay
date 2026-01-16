@@ -1,8 +1,9 @@
 /**
  * Privacy Cash API Routes
  * 
- * SIMPLIFIED: Direct SOL transfers for deposits
- * Privacy Cash SDK used only for withdrawals (ZK proofs)
+ * CORRECT ARCHITECTURE: Relayer handles all deposits via Privacy Cash SDK
+ * User does NOT sign transactions (privacy-preserving)
+ * Relayer pays gas fees and generates ZK proofs
  */
 
 import express from 'express';
@@ -15,25 +16,35 @@ const RELAYER_AUTH_SECRET = process.env.RELAYER_AUTH_SECRET;
 
 /**
  * POST /api/privacy/deposit
- * Record deposit transaction (user pays directly with Phantom)
- * Privacy Cash used only for withdrawals when recipient claims
+ * Request Privacy Cash deposit via relayer
+ * User does NOT sign - relayer handles everything
  */
 router.post('/deposit', async (req, res) => {
   try {
-    const { txSignature, linkId, amount } = req.body;
+    const { linkId, amount, lamports } = req.body;
 
-    if (!txSignature) {
+    // Accept either amount (SOL) or lamports
+    const depositAmount = amount || (lamports ? lamports / 1e9 : null);
+
+    if (!depositAmount || depositAmount <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Transaction signature required'
+        message: 'Invalid amount'
       });
     }
 
-    console.log(`📝 Recording deposit...`);
-    console.log(`   TX: ${txSignature}`);
-    console.log(`   Link: ${linkId || 'none'}`);
+    if (!linkId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Link ID required'
+      });
+    }
 
-    // Forward to relayer for verification
+    console.log(`📡 Forwarding Privacy Cash deposit to relayer...`);
+    console.log(`   Amount: ${depositAmount} SOL`);
+    console.log(`   Link: ${linkId}`);
+
+    // Forward to relayer - relayer will call Privacy Cash SDK
     const relayerResponse = await fetch(`${RELAYER_URL}/deposit`, {
       method: 'POST',
       headers: {
@@ -43,15 +54,14 @@ router.post('/deposit', async (req, res) => {
         })
       },
       body: JSON.stringify({
-        txSignature,
-        linkId,
-        amount
+        amount: depositAmount,
+        linkId
       })
     });
 
     if (!relayerResponse.ok) {
       const errorText = await relayerResponse.text();
-      let errorMessage = 'Failed to verify deposit';
+      let errorMessage = 'Failed to process deposit';
       
       try {
         const error = JSON.parse(errorText);
@@ -66,19 +76,22 @@ router.post('/deposit', async (req, res) => {
 
     const result = await relayerResponse.json();
     
-    console.log(`✅ Deposit recorded`);
+    console.log(`✅ Deposit successful`);
+    console.log(`   TX: ${result.txSignature}`);
+    console.log(`   Commitment: ${result.commitment || 'N/A'}`);
 
     res.json({
       success: true,
-      txSignature,
-      verified: result.verified
+      txSignature: result.txSignature,
+      commitment: result.commitment,
+      amount: result.amount
     });
 
   } catch (error) {
-    console.error('❌ Record deposit failed:', error);
+    console.error('❌ Deposit failed:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to record deposit'
+      message: error.message || 'Failed to process deposit'
     });
   }
 });

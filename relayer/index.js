@@ -193,10 +193,11 @@ app.get("/health", async (_, res) => {
 // Frontend → Backend → Relayer → Privacy Cash SDK
 // Relayer creates ZK proof and submits transaction
 // User DOES NOT sign anything (privacy-preserving)
+// Relayer pays gas fees (breaks on-chain link)
 
 app.post("/deposit", authenticateRequest, async (req, res) => {
   try {
-    const { amount, walletAddress, linkId, lamports } = req.body;
+    const { amount, linkId, lamports } = req.body;
 
     // Accept either amount (SOL) or lamports
     const depositLamports = lamports || (amount ? Math.floor(amount * LAMPORTS_PER_SOL) : null);
@@ -205,18 +206,14 @@ app.post("/deposit", authenticateRequest, async (req, res) => {
       return res.status(400).json({ error: "Invalid amount" });
     }
 
-    if (!walletAddress) {
-      return res.status(400).json({ error: "walletAddress required" });
-    }
-
     if (!linkId) {
       return res.status(400).json({ error: "linkId required" });
     }
 
     console.log("💰 Privacy Cash DEPOSIT via relayer");
     console.log("   Amount:", depositLamports / LAMPORTS_PER_SOL, "SOL");
-    console.log("   From wallet:", walletAddress);
     console.log("   Link:", linkId);
+    console.log("   Fee payer: Relayer (privacy-preserving)");
 
     // Wait for SDK to be ready
     if (!privacyCashClient) {
@@ -228,6 +225,7 @@ app.post("/deposit", authenticateRequest, async (req, res) => {
     const startTime = Date.now();
 
     // 🔐 PRIVACY CASH DEPOSIT (THE CORE)
+    // Relayer signs and pays gas - user identity hidden
     console.log("🔐 Calling Privacy Cash SDK deposit()...");
     const result = await privacyCashClient.deposit({
       lamports: depositLamports,

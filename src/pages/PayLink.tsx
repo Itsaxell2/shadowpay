@@ -117,18 +117,19 @@ const PayLink = () => {
       const amount = parseFloat(paymentData.amount);
 
       // Call backend API - let relayer handle Privacy Cash SDK
+      // User does NOT sign anything (privacy-preserving)
       console.log("\n📤 Calling backend deposit API...");
       console.log("   Backend will:");
       console.log("   1. Forward request to relayer");
       console.log("   2. Relayer runs Privacy Cash SDK");
       console.log("   3. ZK proof generated on server");
-      console.log("   4. Transaction submitted to blockchain");
+      console.log("   4. Relayer pays gas & submits transaction");
+      console.log("   5. User identity NEVER revealed on-chain");
       
       const { requestDeposit } = await import('../lib/privacyCashClient');
       
       const depositResult = await requestDeposit({
         amount,
-        walletAddress: publicKey,
         linkId: linkId,
       });
 

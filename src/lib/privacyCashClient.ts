@@ -12,8 +12,8 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3333';
 
 export interface DepositRequest {
   amount: number; // in SOL
-  walletAddress: string;
   linkId?: string;
+  // walletAddress NOT needed - relayer signs everything
 }
 
 export interface DepositResponse {
@@ -41,12 +41,14 @@ export interface WithdrawResponse {
 
 /**
  * Request deposit via backend relayer
- * Backend will call Privacy Cash SDK to perform ZK deposit
+ * Relayer will call Privacy Cash SDK to perform ZK deposit
+ * User does NOT sign - relayer handles everything (privacy-preserving)
  */
 export async function requestDeposit(request: DepositRequest): Promise<DepositResponse> {
   console.log('📤 Requesting deposit via backend...');
   console.log('   Amount:', request.amount, 'SOL');
-  console.log('   Wallet:', request.walletAddress);
+  console.log('   Link:', request.linkId);
+  console.log('   Architecture: Browser → Backend → Relayer → Privacy Cash SDK');
   
   try {
     const response = await fetch(`${API_BASE_URL}/api/privacy/deposit`, {
@@ -55,8 +57,7 @@ export async function requestDeposit(request: DepositRequest): Promise<DepositRe
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        lamports: Math.floor(request.amount * 1e9),
-        walletAddress: request.walletAddress,
+        amount: request.amount,
         linkId: request.linkId,
       }),
     });
