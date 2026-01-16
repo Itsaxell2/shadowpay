@@ -14,6 +14,11 @@ let cachedPrivacyCash: any = null;
 const PayLink = () => {
   const { connected, publicKey, connect } = useWallet();
   const [paymentState, setPaymentState] = useState<"confirm" | "processing" | "success">("confirm");
+  
+  // Reset SDK singleton when wallet changes (prevent stale state)
+  useEffect(() => {
+    cachedPrivacyCash = null;
+  }, [publicKey?.toString()]);
   const [error, setError] = useState<string | null>(null);
   const [txSignature, setTxSignature] = useState<string | null>(null);
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
@@ -62,6 +67,9 @@ const PayLink = () => {
   }, []);
 
   const handlePay = async () => {
+    // Prevent double-click (critical: stops duplicate payments)
+    if (paymentState === "processing") return;
+    
     // Check wallet connection first
     if (!connected || !publicKey) {
       setError("Please connect your wallet first");
@@ -114,29 +122,35 @@ const PayLink = () => {
       const { initializePrivacyCash, depositSOL } = await import('../lib/privacyCashDeposit');
       const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://api.mainnet-beta.solana.com';
       
-      // Initialize SDK with Phantom wallet adapter (full interface)
-      const { Connection } = await import('@solana/web3.js');
-      const connection = new Connection(rpcUrl, 'confirmed');
+      // SDK instance reference for wallet adapter closure
+      let sdkInstance: any = null;
       
+      // Initialize SDK with Phantom wallet adapter (full interface)
       const walletAdapter = {
         publicKey: phantom.publicKey,
         signTransaction: phantom.signTransaction.bind(phantom),
         signAllTransactions: phantom.signAllTransactions?.bind(phantom),
-        // Add sendTransaction for SDK compatibility (some operations require this)
-        sendTransaction: async (tx: any, conn: any) => {
+        // Use SDK's connection (not separate instance) to prevent status mismatch
+        sendTransaction: async (tx: any) => {
           const signed = await phantom.signTransaction(tx);
-          return conn.sendRawTransaction(signed.serialize());
+          return sdkInstance.connection.sendRawTransaction(signed.serialize());
         }
       };
       
       // Use singleton to prevent state conflicts (UTXO cache, commitment tree)
-      const privacyCashInstance = cachedPrivacyCash ??= await initializePrivacyCash(
+      sdkInstance = cachedPrivacyCash ??= await initializePrivacyCash(
         rpcUrl,
         walletAdapter,
         true
       );
+      const privacyCashInstance = sdkInstance;
 
       console.log("✅ Privacy Cash SDK initialized");
+
+      // Hard fail if linkId missing (prevent orphaned commitments)
+      if (!linkId) {
+        throw new Error("Invalid payment link (missing link ID)");
+      }
 
       // Deposit via Privacy Cash (correct flow)
       console.log("\n💰 Calling Privacy Cash deposit...");
@@ -149,7 +163,7 @@ const PayLink = () => {
       const depositResult = await depositSOL({
         amountLamports,
         privacyCash: privacyCashInstance,
-        linkId: linkId || undefined,
+        linkId: linkId,
       });
 
       console.log("\n🎉 Payment successful!");
