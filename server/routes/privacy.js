@@ -14,32 +14,105 @@ const RELAYER_URL = process.env.RELAYER_URL || 'http://localhost:4444';
 const RELAYER_AUTH_SECRET = process.env.RELAYER_AUTH_SECRET;
 
 /**
- * POST /api/privacy/deposit
- * Forward user-signed Privacy Cash deposit transaction to relayer
- * 
- * Architecture:
- * 1. Frontend: User builds & signs TX with Privacy Cash SDK
- * 2. Backend: Receives signed TX and forwards to relayer
- * 3. Relayer: Submits signed TX to blockchain
- * 
- * NOTE: User is fee payer (Privacy Cash design requirement)
+ * POST /api/privacy/build-deposit
+ * Request backend to build unsigned deposit transaction
+ * Backend uses Privacy Cash SDK (Node.js only)
+ * Returns unsigned transaction for user to sign in browser
  */
-router.post('/deposit', async (req, res) => {
+router.post('/build-deposit', async (req, res) => {
+  try {
+    const { amount, walletAddress, linkId } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid amount'
+      });
+    }
+
+    if (!walletAddress) {
+      return res.status(400).json({
+        success: false,
+        message: 'Wallet address required'
+      });
+    }
+
+    const lamports = Math.floor(amount * 1_000_000_000);
+
+    console.log(`🔨 Requesting unsigned deposit transaction from relayer...`);
+    console.log(`   Amount: ${amount} SOL`);
+    console.log(`   User: ${walletAddress}`);
+
+    // Request relayer to build unsigned transaction
+    const relayerResponse = await fetch(`${RELAYER_URL}/build-deposit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(RELAYER_AUTH_SECRET && {
+          'x-relayer-auth': RELAYER_AUTH_SECRET
+        })
+      },
+      body: JSON.stringify({
+        lamports,
+        userPublicKey: walletAddress,
+        linkId,
+      })
+    });
+
+    if (!relayerResponse.ok) {
+      const errorText = await relayerResponse.text();
+      let errorMessage = 'Failed to build transaction';
+      
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || `HTTP ${relayerResponse.status}`;
+      }
+      
+      console.error('❌ Relayer error:', errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    const result = await relayerResponse.json();
+    
+    console.log(`✅ Unsigned transaction received from relayer`);
+
+    res.json({
+      success: true,
+      unsignedTransaction: result.unsignedTransaction,
+      commitment: result.commitment,
+      nullifier: result.nullifier,
+    });
+
+  } catch (error) {
+    console.error('❌ Build deposit failed:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to build transaction'
+    });
+  }
+});
+
+/**
+ * POST /api/privacy/submit-deposit
+ * Submit user-signed deposit transaction to relayer
+ */
+router.post('/submit-deposit', async (req, res) => {
   try {
     const { signedTransaction, linkId } = req.body;
 
     if (!signedTransaction) {
       return res.status(400).json({
         success: false,
-        message: 'signedTransaction required (user must sign in browser)'
+        message: 'signedTransaction required'
       });
     }
 
-    console.log(`📡 Forwarding signed deposit transaction to relayer...`);
-    console.log(`   Link: ${linkId || 'none'}`);
+    console.log(`📡 Submitting signed deposit to relayer...`);
 
     // Forward signed transaction to relayer
-    const relayerResponse = await fetch(`${RELAYER_URL}/deposit`, {
+    const relayerResponse = await fetch(`${RELAYER_URL}/submit-deposit`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -65,14 +138,12 @@ router.post('/deposit', async (req, res) => {
       }
       
       console.error('❌ Relayer error:', errorMessage);
-      console.error('❌ Status:', relayerResponse.status);
-      
       throw new Error(errorMessage);
     }
 
     const result = await relayerResponse.json();
     
-    console.log(`✅ Deposit transaction submitted successfully`);
+    console.log(`✅ Deposit submitted successfully`);
     console.log(`   TX: ${result.tx}`);
 
     res.json({
@@ -82,7 +153,7 @@ router.post('/deposit', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Deposit request failed:', error);
+    console.error('❌ Submit deposit failed:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Deposit failed'

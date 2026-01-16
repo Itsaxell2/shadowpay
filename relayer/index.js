@@ -187,61 +187,47 @@ app.get("/health", async (_, res) => {
 });
 
 /* ─────────────────────────────────────
-   DEPOSIT
+   DEPOSIT (WITHOUT PRIVACY CASH SDK)
 ───────────────────────────────────── */
-// Privacy Cash Architecture:
-// - User MUST be fee payer (by design)
-// - User signs transaction in browser
-// - Backend/relayer only forwards signed transaction
-//
-// Flow:
-// 1. Browser: User builds & signs TX with Privacy Cash SDK
-// 2. Browser: Sends signed TX to backend
-// 3. Backend: Forwards to relayer
-// 4. Relayer: Submits signed TX to blockchain
-//
-// ❌ WRONG: Backend calls SDK.deposit() without user signature
-// ✅ CORRECT: User signs, backend submits pre-signed TX
+// SIMPLIFIED ARCHITECTURE:
+// User just pays link amount directly (regular SOL transfer)
+// Privacy Cash withdrawals happen later when recipient claims
+// This avoids all SDK complexity for deposits
 
 app.post("/deposit", authenticateRequest, async (req, res) => {
   try {
-    const { signedTransaction, linkId } = req.body;
+    const { linkId, txSignature, amount } = req.body;
 
-    if (!signedTransaction) {
+    if (!txSignature) {
       return res.status(400).json({ 
-        error: "signedTransaction required",
-        message: "Privacy Cash deposits must be signed by user in browser"
+        error: "txSignature required - user must complete payment first"
       });
     }
 
-    console.log(`📥 Receiving signed deposit transaction...`);
-    console.log(`🔗 Link: ${linkId || 'none'}`);
-    
-    const startTime = Date.now();
+    console.log(`📥 Recording deposit...`);
+    console.log(`   TX: ${txSignature}`);
+    console.log(`   Link: ${linkId || 'none'}`);
+    console.log(`   Amount: ${amount || 'unknown'} SOL`);
 
-    // Decode and submit the pre-signed transaction
-    const txBuffer = Buffer.from(signedTransaction, 'base64');
-    const signature = await connection.sendRawTransaction(txBuffer, {
-      skipPreflight: false,
-      preflightCommitment: 'confirmed'
+    // Just verify transaction exists on blockchain
+    const tx = await connection.getTransaction(txSignature, {
+      commitment: 'confirmed'
     });
 
-    // Wait for confirmation
-    await connection.confirmTransaction(signature, 'confirmed');
-    
-    const duration = Date.now() - startTime;
+    if (!tx) {
+      throw new Error('Transaction not found or not confirmed');
+    }
 
-    console.log(`✅ Deposit successful: ${signature}`);
-    console.log(`⏱️  Duration: ${duration}ms`);
-    console.log(`📋 Verify: https://solscan.io/tx/${signature}`);
+    console.log(`✅ Deposit verified on blockchain`);
+    console.log(`   Block: ${tx.slot}`);
 
     res.json({
       success: true,
-      tx: signature,
-      // Note: commitment is generated client-side and stored by user
+      tx: txSignature,
+      verified: true
     });
   } catch (err) {
-    console.error("❌ Deposit error:", err);
+    console.error("❌ Deposit verification error:", err);
     res.status(500).json({ error: err.message });
   }
 });

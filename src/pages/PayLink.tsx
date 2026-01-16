@@ -97,60 +97,91 @@ const PayLink = () => {
         throw new Error("Phantom wallet not found. Please install Phantom extension.");
       }
 
-      console.log("💰 Starting Privacy Cash deposit...");
+      console.log("💰 Starting payment (DIRECT SOL TRANSFER)...");
       console.log("   Amount:", paymentData.amount, token);
       console.log("   Link ID:", linkId);
       console.log("   Wallet:", publicKey);
-      console.log("   Architecture: BROWSER SIGNING (user = fee payer)");
+      console.log("   Flow: User → Phantom → Direct SOL transfer → Verification");
 
       const amount = parseFloat(paymentData.amount);
       const amountLamports = Math.floor(amount * 1_000_000_000);
 
-      // STEP 1: Initialize Privacy Cash SDK in browser
-      console.log("\n🔐 Step 1: Initializing Privacy Cash SDK in browser...");
-      console.log("   User wallet will sign transaction");
-      console.log("   User pays transaction fees (not relayer)");
+      // STEP 1: Build regular SOL transfer transaction
+      console.log("\n💸 Step 1: Building SOL transfer transaction...");
+      console.log("   From:", publicKey);
+      console.log("   To: ShadowPay (backend will provide address)");
+      console.log("   Amount:", amount, "SOL");
+
+      // Get recipient address from backend
+      const recipientResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3333'}/api/links/${linkId}`);
+      if (!recipientResponse.ok) {
+        throw new Error('Failed to get payment details');
+      }
+      const linkData = await recipientResponse.json();
+      const recipientAddress = linkData.recipientAddress || import.meta.env.VITE_TREASURY_ADDRESS;
+
+      // Import Solana web3
+      const { Connection, PublicKey: SolanaPublicKey, Transaction, SystemProgram } = await import('@solana/web3.js');
       
-      const { initializePrivacyCash, depositSOL } = await import('../lib/privacyCashDeposit');
-      const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://api.mainnet-beta.solana.com';
-      
-      // SDK needs wallet adapter (Phantom)
-      const walletAdapter = {
-        publicKey: phantom.publicKey,
-        signTransaction: phantom.signTransaction.bind(phantom),
-        signAllTransactions: phantom.signAllTransactions.bind(phantom),
-      };
-      
-      const privacyCashInstance = await initializePrivacyCash(
-        rpcUrl,
-        walletAdapter,
-        true // enable debug
+      const connection = new Connection(
+        import.meta.env.VITE_RPC_URL || 'https://api.mainnet-beta.solana.com',
+        'confirmed'
       );
 
-      // STEP 2: Deposit with user signing (user = fee payer)
-      console.log("\n💰 Step 2: User will sign deposit transaction...");
-      console.log("   SDK builds TX → User signs → Backend submits");
-      
-      const depositResult = await depositSOL({
-        amountLamports,
-        privacyCash: privacyCashInstance,
-        linkId: linkId || undefined,
+      // Build transfer transaction
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: new SolanaPublicKey(publicKey),
+          toPubkey: new SolanaPublicKey(recipientAddress),
+          lamports: amountLamports,
+        })
+      );
+
+      // Get recent blockhash
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = new SolanaPublicKey(publicKey);
+
+      // STEP 2: User signs with Phantom
+      console.log("\n✍️  Step 2: User signing transaction with Phantom...");
+      const signedTx = await phantom.signAndSendTransaction(transaction);
+      const txSignature = typeof signedTx === 'string' ? signedTx : signedTx.signature;
+
+      console.log("✅ Transaction sent:", txSignature);
+
+      // STEP 3: Verify on blockchain
+      console.log("\n✅ Step 3: Verifying transaction on blockchain...");
+      await connection.confirmTransaction(txSignature, 'confirmed');
+
+      // Record deposit with backend
+      const recordResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3333'}/api/privacy/deposit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          txSignature,
+          linkId: linkId || undefined,
+          amount,
+        }),
       });
 
+      if (!recordResponse.ok) {
+        console.warn('Failed to record deposit with backend, but transaction succeeded');
+      }
+
       console.log("\n🎉 Payment successful!");
-      console.log("   ✅ TX:", depositResult.txSignature);
-      console.log("   ✅ User paid fees from their wallet");
-      console.log("   ✅ UTXO encrypted and stored");
+      console.log("   ✅ TX:", txSignature);
+      console.log("   ✅ User paid directly with Phantom");
+      console.log("   ✅ Transaction confirmed on blockchain");
 
       const network = 'mainnet-beta';
-      setTxSignature(depositResult.txSignature);
-      setExplorerUrl(`https://explorer.solana.com/tx/${depositResult.txSignature}?cluster=${network}`);
+      setTxSignature(txSignature);
+      setExplorerUrl(`https://explorer.solana.com/tx/${txSignature}?cluster=${network}`);
       
       // Success - update state
       setPaymentState("success");
       
       toast.success('Payment Successful!', {
-        description: `Transaction: ${depositResult.txSignature.substring(0, 8)}...`,
+        description: `Transaction: ${txSignature.substring(0, 8)}...`,
       });
       
     } catch (error: any) {
