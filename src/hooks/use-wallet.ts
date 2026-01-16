@@ -24,10 +24,24 @@ export function useWallet() {
       const token = getToken();
       const wallet = getWallet();
       
+      // Wait for Phantom to load
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Check if we have stored wallet data
       if (wallet) {
         try {
-          const phantom = (window as any).phantom?.solana;
+          const getPhantom = () => {
+            if ((window as any).phantom?.solana?.isPhantom) {
+              return (window as any).phantom.solana;
+            }
+            if ((window as any).solana?.isPhantom) {
+              return (window as any).solana;
+            }
+            return null;
+          };
+          
+          const phantom = getPhantom();
+          
           if (!phantom) {
             setState({
               connected: false,
@@ -38,38 +52,40 @@ export function useWallet() {
             });
             return;
           }
+          
           // Check if Phantom is already connected
-          if (phantom.isConnected) {
-            setState({
-              connected: true,
-              publicKey: wallet,
-              token,
-              loading: false,
-              error: null,
-            });
-          } else {
-            // Try to reconnect silently
-            try {
-              const resp = await phantom.connect({ onlyIfTrusted: true });
-              const publicKey = resp.publicKey?.toString();
-              if (publicKey && publicKey === wallet) {
-                setState({
-                  connected: true,
-                  publicKey,
-                  token,
-                  loading: false,
-                  error: null,
-                });
-              } else {
-                setState({
-                  connected: false,
-                  publicKey: null,
-                  token: null,
-                  loading: false,
-                  error: null,
-                });
-              }
-            } catch (err) {
+          if (phantom.isConnected && phantom.publicKey) {
+            const publicKey = phantom.publicKey.toString();
+            if (publicKey === wallet) {
+              console.log("🔄 Auto-reconnected:", publicKey.slice(0, 8) + "...");
+              setState({
+                connected: true,
+                publicKey,
+                token,
+                loading: false,
+                error: null,
+              });
+              return;
+            }
+          }
+          
+          // Try silent reconnect
+          try {
+            const resp = await phantom.connect({ onlyIfTrusted: true });
+            const publicKey = resp.publicKey?.toString();
+            if (publicKey && publicKey === wallet) {
+              console.log("🔄 Silent reconnect successful:", publicKey.slice(0, 8) + "...");
+              setState({
+                connected: true,
+                publicKey,
+                token,
+                loading: false,
+                error: null,
+              });
+            } else {
+              // Stored wallet doesn't match, clear storage
+              localStorage.removeItem("shadowpay_wallet");
+              localStorage.removeItem("shadowpay_token");
               setState({
                 connected: false,
                 publicKey: null,
@@ -78,17 +94,19 @@ export function useWallet() {
                 error: null,
               });
             }
+          } catch (err) {
+            // Silent reconnect failed (user needs to approve again)
+            console.log("ℹ️  Silent reconnect not available, user needs to connect");
+            setState({
+              connected: false,
+              publicKey: null,
+              token: null,
+              loading: false,
+              error: null,
+            });
           }
         } catch (err) {
-          setState({
-            connected: false,
-            publicKey: null,
-            token: null,
-            loading: false,
-            error: null,
-          });
-          const errMsg = err instanceof Error ? err.message : String(err);
-          console.error("Init error details:", errMsg);
+          console.error("Init error:", err);
           setState({
             connected: false,
             publicKey: null,
@@ -112,7 +130,17 @@ export function useWallet() {
     initWallet();
 
     // Listen for Phantom disconnect events
-    const phantom = (window as any).phantom?.solana;
+    const getPhantom = () => {
+      if ((window as any).phantom?.solana?.isPhantom) {
+        return (window as any).phantom.solana;
+      }
+      if ((window as any).solana?.isPhantom) {
+        return (window as any).solana;
+      }
+      return null;
+    };
+    
+    const phantom = getPhantom();
     if (phantom) {
       const handleDisconnect = () => {
         console.log("👋 Phantom disconnected");
@@ -127,83 +155,121 @@ export function useWallet() {
         });
       };
 
+      // Remove any existing listeners first
+      try {
+        phantom.off("disconnect", handleDisconnect);
+      } catch (e) {
+        // Ignore if no listeners exist
+      }
+      
       phantom.on("disconnect", handleDisconnect);
 
       // Cleanup
       return () => {
-        phantom.off("disconnect", handleDisconnect);
+        try {
+          phantom.off("disconnect", handleDisconnect);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
       };
     }
   }, []);
 
   const connect = async () => {
+    // Prevent multiple simultaneous connection attempts
+    if (state.loading) {
+      console.log("⏳ Connection already in progress...");
+      return;
+    }
+
     setState((prev) => ({ ...prev, loading: true, error: null }));
+    
     try {
-      // Wait a moment for Phantom to be fully available
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for Phantom to be fully initialized
+      await new Promise(resolve => setTimeout(resolve, 300));
       
-      // Check if Phantom is installed with better detection
-      let phantom = (window as any).phantom?.solana;
-      
-      // Fallback check for window.solana
-      if (!phantom) {
-        phantom = (window as any).solana;
-        if (phantom && !phantom.isPhantom) {
-          phantom = null;
+      // Check if Phantom is installed with robust detection
+      const getPhantom = () => {
+        if ((window as any).phantom?.solana?.isPhantom) {
+          return (window as any).phantom.solana;
         }
-      }
+        // Fallback: check window.solana
+        if ((window as any).solana?.isPhantom) {
+          return (window as any).solana;
+        }
+        return null;
+      };
+      
+      const phantom = getPhantom();
       
       if (!phantom) {
-        throw new Error("Phantom wallet not found. Please install Phantom extension from phantom.app");
+        throw new Error("Phantom wallet not found. Please install from phantom.app");
       }
 
-      console.log("🦊 Phantom wallet detected, requesting connection...");
+      console.log("🦊 Phantom detected, connecting...");
 
-      // Request connection with timeout
+      // If already connected, just use existing connection
+      if (phantom.isConnected && phantom.publicKey) {
+        const publicKey = phantom.publicKey.toString();
+        console.log("✅ Using existing connection:", publicKey.slice(0, 8) + "...");
+        
+        setState({
+          connected: true,
+          publicKey,
+          token: null,
+          loading: false,
+          error: null,
+        });
+        
+        localStorage.setItem("shadowpay_wallet", publicKey);
+        return;
+      }
+
+      // Request new connection
       let resp: any;
       try {
-        const connectPromise = phantom.connect();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Connection timed out. Please try again.")), 30000)
-        );
+        resp = await phantom.connect();
+      } catch (connectErr: any) {
+        // Handle Phantom-specific errors
+        const errMsg = connectErr?.message || String(connectErr);
         
-        resp = await Promise.race([connectPromise, timeoutPromise]);
-      } catch (connectErr) {
-        const errMsg = connectErr instanceof Error ? connectErr.message : String(connectErr);
-        // Handle common Phantom errors
-        if (errMsg.includes('timed out')) {
-          throw new Error("Wallet connection timed out. Please try again.");
-        } else if (errMsg.includes('User rejected') || errMsg.includes('rejected')) {
-          throw new Error("Connection request rejected");
-        } else if (errMsg === "Unexpected error") {
-          // This is a Phantom-specific error, try reconnecting
-          throw new Error("Wallet connection failed. Please try refreshing the page and try again.");
+        if (errMsg.includes('User rejected') || errMsg.includes('rejected') || connectErr?.code === 4001) {
+          throw new Error("Connection rejected by user");
         }
-        throw connectErr;
+        
+        if (errMsg.includes('already pending')) {
+          throw new Error("Connection already pending. Check Phantom popup.");
+        }
+        
+        if (errMsg === "Unexpected error" || !errMsg) {
+          // Phantom throws this when connection state is unclear
+          // Try to recover by checking if actually connected
+          await new Promise(resolve => setTimeout(resolve, 500));
+          if (phantom.isConnected && phantom.publicKey) {
+            resp = { publicKey: phantom.publicKey };
+          } else {
+            throw new Error("Connection failed. Please try again or reload the page.");
+          }
+        } else {
+          throw connectErr;
+        }
       }
       
-      const publicKey = resp.publicKey?.toString();
+      const publicKey = resp?.publicKey?.toString();
       if (!publicKey) {
-        throw new Error("Failed to get public key from Phantom");
+        throw new Error("Failed to get wallet address");
       }
 
       console.log("✅ Wallet connected:", publicKey.slice(0, 8) + "...");
 
-      // ========================================================================
-      // WALLET CONNECTED — SET STATE FIRST (DEMO/HACKATHON MODE)
-      // ========================================================================
-      // This ensures wallet shows as "connected" even if backend is offline.
-      // Perfect for demos, testnet, or when backend auth is not critical.
-      
       setState({
         connected: true,
         publicKey,
-        token: null, // Will be populated if backend auth succeeds
+        token: null,
         loading: false,
         error: null,
       });
 
-      // Store wallet (no token yet)
       localStorage.setItem("shadowpay_wallet", publicKey);
 
       // ========================================================================
