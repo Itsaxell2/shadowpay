@@ -232,17 +232,18 @@ app.post("/deposit", authenticateRequest, async (req, res) => {
     console.log("🔐 Creating fresh Privacy Cash SDK instance...");
     const client = new PrivacyCash({
       RPC_url: RPC_URL,
-      owner: relayerKeypair,
-      // CRITICAL: Relayer keypair must be used as fee payer
-      // Without this, SDK tries to use a different account and fails
-      feePayer: relayerKeypair
+      owner: relayerKeypair,  // Relayer keypair is owner AND fee payer
+      enableDebug: true
     });
     
     console.log("🔐 Calling Privacy Cash SDK deposit()...");
-    // IMPORTANT: Pass feePayer explicitly to deposit call
+    console.log("   SDK will generate ZK proof and submit transaction");
+    console.log("   This may take 10-30 seconds...");
+    
+    // Privacy Cash SDK deposit() only accepts { lamports }
+    // The owner (relayerKeypair) is automatically used as fee payer
     const result = await client.deposit({
-      lamports: depositLamports,
-      feePayer: relayerKeypair  // Explicit fee payer for this transaction
+      lamports: depositLamports
     });
 
     const duration = Date.now() - startTime;
