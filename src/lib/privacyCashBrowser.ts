@@ -336,7 +336,7 @@ export class PrivacyCashBrowser {
         const extDataHash = '0';
 
         // Circuit input (matches SDK structure exactly)
-        // For deposit: inPathIndices and inPathElements must be empty arrays
+        // For deposit: DO NOT include inPathIndices or inPathElements at all
         return {
             // Common transaction data
             root: treeRoot,
@@ -349,8 +349,6 @@ export class PrivacyCashBrowser {
             inAmount: [input0.amount.toString(10), input1.amount.toString(10)],
             inPrivateKey: [privkeyBN.toString(), privkeyBN.toString()],
             inBlinding: [input0.blinding.toString(10), input1.blinding.toString(10)],
-            inPathIndices: [],
-            inPathElements: [],
 
             // Output UTXO data
             outAmount: [output0.amount.toString(10), output1.amount.toString(10)],
