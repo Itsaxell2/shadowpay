@@ -44,6 +44,6 @@
   ],
   "env": {
     "VITE_API_URL": "https://shadowpay-production.up.railway.app/api",
-    "VITE_SOLANA_NETWORK": "testnet"
+    "VITE_SOLANA_NETWORK": "mainnet"
   }
 }
