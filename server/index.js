@@ -78,18 +78,17 @@ app.use(globalLimiter);
 app.use(securityLogger);
 
 /**
- * ⚠️ CRITICAL FIX:
- * sanitizeInput must NOT break base64 tx
+ * ⚠️ IMPORTANT:
+ * Jangan sanitize base64 tx
  */
 app.use((req, res, next) => {
-  if (req.body?.transferTx || req.body?.signedTx) {
-    return next();
-  }
+  if (req.body?.transferTx || req.body?.signedTx) return next();
   sanitizeInput(req, res, next);
 });
 
 /* ───────── ROUTES ───────── */
 
+// Privacy routes
 app.use("/api/privacy", privacyRoutes);
 
 /* ───────── HELPERS ───────── */
@@ -111,7 +110,7 @@ async function saveLinks(map) {
 
 /* ───────── HEALTH ───────── */
 
-app.get("/health", (_, res) => {
+app.get("/api/health", (_, res) => {
   res.json({
     ok: true,
     uptime: process.uptime(),
@@ -121,23 +120,82 @@ app.get("/health", (_, res) => {
 
 /* ───────── AUTH ───────── */
 
-app.post("/auth/login", async (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   const { publicKey, message, signature } = req.body;
+
   if (!verifySignature(message, signature, publicKey)) {
     return res.status(401).json({ error: "Invalid signature" });
   }
+
   res.json({ success: true, token: generateToken(publicKey) });
+});
+
+/* ───────── LINKS (CREATE / GET) ───────── */
+
+// CREATE LINK
+app.post("/api/links", async (req, res) => {
+  const { amount, token, creator_id, expiryHours } = req.body;
+
+  if (!amount || !creator_id) {
+    return res.status(400).json({ error: "amount & creator_id required" });
+  }
+
+  const map = await loadLinks();
+  const id = Math.random().toString(36).slice(2, 9);
+
+  let expiresAt;
+  if (expiryHours && expiryHours > 0) {
+    expiresAt = Date.now() + expiryHours * 60 * 60 * 1000;
+  }
+
+  const link = {
+    id,
+    creator_id,
+    amount,
+    token: token || "SOL",
+    status: "active",
+    commitment: null,
+    payment_count: 0,
+    created_at: Date.now(),
+    expiresAt,
+  };
+
+  map[id] = link;
+  await saveLinks(map);
+
+  res.json({
+    success: true,
+    link: {
+      ...link,
+      url: `${process.env.FRONTEND_ORIGIN}/pay/${id}`,
+    },
+  });
+});
+
+// GET LINK
+app.get("/api/links/:id", async (req, res) => {
+  const map = await loadLinks();
+  const link = map[req.params.id];
+  if (!link) return res.status(404).json({ error: "not found" });
+
+  if (link.expiresAt && Date.now() > link.expiresAt) {
+    return res.json({ success: true, link: { ...link, status: "expired" } });
+  }
+
+  res.json({ success: true, link });
 });
 
 /* ───────── PAY ───────── */
 
-app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
+app.post("/api/links/:id/pay", paymentLimiter, async (req, res) => {
   const { transferTx, lamports, payerPublicKey } = req.body;
   const map = await loadLinks();
   const link = map[req.params.id];
 
   if (!link) return res.status(404).json({ error: "Link not found" });
-  if (link.status === "paid") return res.status(400).json({ error: "Already paid" });
+  if (link.status === "paid") {
+    return res.status(400).json({ error: "Already paid" });
+  }
 
   if (!transferTx || !payerPublicKey || !lamports) {
     return res.status(400).json({ error: "Missing payment fields" });
@@ -182,51 +240,56 @@ app.post("/links/:id/pay", paymentLimiter, async (req, res) => {
 
 /* ───────── CLAIM ───────── */
 
-app.post("/links/:id/claim", withdrawalLimiter, authMiddleware, async (req, res) => {
-  const { recipientWallet } = req.body;
-  const map = await loadLinks();
-  const link = map[req.params.id];
+app.post(
+  "/api/links/:id/claim",
+  withdrawalLimiter,
+  authMiddleware,
+  async (req, res) => {
+    const { recipientWallet } = req.body;
+    const map = await loadLinks();
+    const link = map[req.params.id];
 
-  if (!link || link.status !== "paid") {
-    return res.status(400).json({ error: "Not withdrawable" });
+    if (!link || link.status !== "paid") {
+      return res.status(400).json({ error: "Not withdrawable" });
+    }
+
+    try {
+      new PublicKey(recipientWallet);
+    } catch {
+      return res.status(400).json({ error: "Invalid wallet" });
+    }
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), RELAYER_TIMEOUT);
+
+    try {
+      const r = await fetch(`${RELAYER_URL}/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          commitment: link.commitment,
+          recipient: recipientWallet,
+          lamports: Math.floor(link.amount * LAMPORTS_PER_SOL),
+        }),
+        signal: controller.signal,
+      });
+
+      if (!r.ok) throw new Error(await r.text());
+      const result = await r.json();
+
+      link.status = "withdrawn";
+      link.withdraw_tx = result.tx;
+      link.withdrawn_at = Date.now();
+
+      map[link.id] = link;
+      await saveLinks(map);
+
+      res.json({ success: true, tx: result.tx });
+    } catch {
+      res.status(500).json({ error: "Withdrawal failed" });
+    }
   }
-
-  try {
-    new PublicKey(recipientWallet);
-  } catch {
-    return res.status(400).json({ error: "Invalid wallet" });
-  }
-
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), RELAYER_TIMEOUT);
-
-  try {
-    const r = await fetch(`${RELAYER_URL}/withdraw`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        commitment: link.commitment,
-        recipient: recipientWallet,
-        lamports: Math.floor(link.amount * LAMPORTS_PER_SOL),
-      }),
-      signal: controller.signal,
-    });
-
-    if (!r.ok) throw new Error(await r.text());
-    const result = await r.json();
-
-    link.status = "withdrawn";
-    link.withdraw_tx = result.tx;
-    link.withdrawn_at = Date.now();
-
-    map[link.id] = link;
-    await saveLinks(map);
-
-    res.json({ success: true, tx: result.tx });
-  } catch {
-    res.status(500).json({ error: "Withdrawal failed" });
-  }
-});
+);
 
 /* ───────── START ───────── */
 
